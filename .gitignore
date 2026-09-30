@@ -6,6 +6,9 @@ dist/
 dist-ssr/
 *.tsbuildinfo
 
+# Shared boards saved by the collaboration server
+data/
+
 # Vite / Vitest caches
 .vite/
 node_modules/.vite/

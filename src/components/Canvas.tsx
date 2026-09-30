@@ -29,11 +29,12 @@ import {
 } from '../curveEdit'
 import type { NodePart } from '../curveEdit'
 import { strokeToCurve } from '../curveFit'
+import type { PeerPresence } from '../protocol'
 import type {
   BoardElement,
   CurveElement,
   LineElement,
-  LinePreset,
+  LineStyle,
   PathElement,
   PenSettings,
   Point,
@@ -75,7 +76,7 @@ interface CanvasProps {
   tool: Tool
   onTool(t: Tool): void
   shapeKind: ShapeKind
-  linePreset: LinePreset
+  lineStyle: LineStyle
   pen: PenSettings
   style: StyleDefaults
   selectedIds: string[]
@@ -88,6 +89,20 @@ interface CanvasProps {
   spaceHeld: boolean
   actions: SelectionActions
   svgRef: React.RefObject<SVGSVGElement | null>
+  /** Other people on this board (shared boards only). */
+  peers: PeerPresence[]
+  /** Reports this user's pointer in world coordinates (shared boards only). */
+  onCursor?(p: Point | null): void
+}
+
+/**
+ * Replace just the `ids` elements in the live board with their versions from
+ * `source`. Gestures compute from a snapshot taken at the start; merging only
+ * what they touch keeps collaborators' concurrent changes (and deletions) intact.
+ */
+function mergeFrom(els: BoardElement[], source: BoardElement[], ids: ReadonlySet<string>): BoardElement[] {
+  const updated = new Map(source.filter((el) => ids.has(el.id)).map((el) => [el.id, el]))
+  return els.map((el) => updated.get(el.id) ?? el)
 }
 
 type Gesture = { pointerId: number; checkpointed: boolean } & (
@@ -460,7 +475,7 @@ export function Canvas(props: CanvasProps) {
       }
       case 'line': {
         const s = props.style
-        const lp = props.linePreset
+        const lp = props.lineStyle
         const startShape = shapeAt(wp, board.get(), null)
         const el: LineElement = {
           id: newId(),
@@ -558,6 +573,7 @@ export function Canvas(props: CanvasProps) {
   }
 
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
+    if (props.onCursor && e.isPrimary) props.onCursor(toWorld(toScreen(e)))
     if (!pointers.current.has(e.pointerId)) return
     const sp = toScreen(e)
     pointers.current.set(e.pointerId, sp)
@@ -623,7 +639,7 @@ export function Canvas(props: CanvasProps) {
         g.moved = true
         const dx = wp.x - g.origin.x
         const dy = wp.y - g.origin.y
-        mutate(() => translateElements(g.snapshot, g.ids, dx, dy))
+        mutate((els) => mergeFrom(els, translateElements(g.snapshot, g.ids, dx, dy), g.ids))
         break
       }
       case 'resize': {
@@ -648,7 +664,7 @@ export function Canvas(props: CanvasProps) {
           if (deg > 180) deg -= 360
           if (deg <= -180) deg += 360
           setHud({ ...hudAt, text: `${deg}°` })
-          mutate(() => rotateElements(g.snapshot, g.ids, g.pivot, angle))
+          mutate((els) => mergeFrom(els, rotateElements(g.snapshot, g.ids, g.pivot, angle), g.ids))
         } else if (g.mode === 'scale') {
           const zoom = vpRef.current.zoom
           const dx0 = g.origin.x - g.pivot.x
@@ -669,14 +685,14 @@ export function Canvas(props: CanvasProps) {
             ...hudAt,
             text: sx === sy ? `${Math.round(sx * 100)}%` : `${Math.round(sx * 100)}% × ${Math.round(sy * 100)}%`,
           })
-          mutate(() => scaleElements(g.snapshot, g.ids, g.pivot, sx, sy))
+          mutate((els) => mergeFrom(els, scaleElements(g.snapshot, g.ids, g.pivot, sx, sy), g.ids))
         } else if (g.box && g.handle) {
           const { sx, sy, anchor } = handleScale(g.box, g.handle, wp, e.shiftKey)
           setHud({
             ...hudAt,
             text: sx === sy ? `${Math.round(sx * 100)}%` : `${Math.round(sx * 100)}% × ${Math.round(sy * 100)}%`,
           })
-          mutate(() => scaleElements(g.snapshot, g.ids, anchor, sx, sy))
+          mutate((els) => mergeFrom(els, scaleElements(g.snapshot, g.ids, anchor, sx, sy), g.ids))
         }
         break
       }
@@ -1012,6 +1028,48 @@ export function Canvas(props: CanvasProps) {
     )
   }
 
+  /** Other people's selections (outlined in their color) and cursors (with a name tag). */
+  function renderPeers() {
+    return props.peers.map((peer) => {
+      const bounds = unionRects(
+        peer.selection.flatMap((id) => {
+          const el = map.get(id)
+          return el ? [getBounds(el, map)] : []
+        }),
+      )
+      const c = peer.cursor
+      const s = 1 / zoom
+      return (
+        <g key={peer.clientId} pointerEvents="none">
+          {bounds && (
+            <rect
+              x={bounds.x - 6 * s}
+              y={bounds.y - 6 * s}
+              width={bounds.w + 12 * s}
+              height={bounds.h + 12 * s}
+              rx={4 * s}
+              fill="none"
+              stroke={peer.color}
+              strokeWidth={2 * s}
+              strokeDasharray={`${6 * s} ${4 * s}`}
+            />
+          )}
+          {c && (
+            // Drawn at screen size regardless of zoom.
+            <g transform={`translate(${c.x} ${c.y}) scale(${s})`} className="peer-cursor">
+              <path d="M0 0 L0 17 L4.5 13 L7.5 20 L10.5 18.7 L7.6 12 L13 12 Z" fill={peer.color} stroke="#fff" strokeWidth={1.5} strokeLinejoin="round" />
+              <foreignObject x={12} y={16} width={220} height={28} style={{ overflow: 'visible' }}>
+                <span className="peer-name" style={{ background: peer.color }}>
+                  {peer.name}
+                </span>
+              </foreignObject>
+            </g>
+          )}
+        </g>
+      )
+    })
+  }
+
   const gridSize = 24 * zoom
   const showMenu =
     !busy && !editing && selected.length > 0 && selectionBounds && (tool === 'select' || transformTool)
@@ -1026,6 +1084,7 @@ export function Canvas(props: CanvasProps) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onPointerLeave={() => props.onCursor?.(null)}
         onMouseDown={preventFocusSteal}
         onContextMenu={(e) => e.preventDefault()}
       >
@@ -1095,6 +1154,7 @@ export function Canvas(props: CanvasProps) {
                 />
               </g>
             )}
+            {renderPeers()}
             {marquee && (
               <rect
                 x={marquee.x}

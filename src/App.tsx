@@ -4,20 +4,27 @@ import type { ActiveNode, Editing, SelectionActions } from './components/Canvas'
 import { deleteNodeFromBoard, nodeCount } from './curveEdit'
 import { Palette } from './components/Palette'
 import { TopBar } from './components/TopBar'
-import { LINE_PRESETS, MAX_ZOOM, MIN_ZOOM, SHAPES } from './constants'
-import { contentBounds, exportPng, exportSvg, pickFile, saveBoardFile } from './exporters'
+import { MAX_ZOOM, MIN_ZOOM, SHAPES } from './constants'
+import { ExportDialog } from './components/ExportDialog'
+import type { ExportChoice } from './components/ExportDialog'
+import { contentBounds, exportBoard, pickFile, pngSize, saveBoardFile } from './exporters'
 import {
   bakeLines,
   bringToFront,
   cloneElements,
   isLabelable,
+  newId,
   removeElements,
   sendToBack,
   translateElements,
 } from './ops'
-import { loadBoard, loadSettings, parseBoardFile, saveBoard, saveSettings } from './storage'
+import { boardIdFromPath, loadIdentity, newBoardId, saveIdentity, stashSeed, takeSeed } from './identity'
+import type { PeerPresence } from './protocol'
+import { loadBoard, loadSettings, parseBoardFile, sanitizeElements, saveBoard, saveSettings } from './storage'
+import { SyncClient } from './sync'
+import type { SyncStatus } from './sync'
 import { rotateElements, scaleElements } from './transform'
-import type { BoardElement, PenSettings, ShapeKind, Tool, Viewport } from './types'
+import type { BoardElement, LineElement, LineStyle, PenSettings, Point, ShapeKind, Tool, Viewport } from './types'
 import { useBoard } from './useBoard'
 
 const HINTS: Record<Tool, string> = {
@@ -41,13 +48,23 @@ const CURVE_EDIT_HINT =
   'Drag points and handles to reshape · double-click the curve to add a point · double-click a point for smooth/corner · Alt-drag a handle to break symmetry'
 
 export default function App() {
-  const [saved] = useState(loadBoard)
+  // /board/<id> is a shared, live board; anything else is the private board kept in this browser.
+  const [boardId] = useState(() => boardIdFromPath(location.pathname))
+  const [saved] = useState(() => (boardId ? { elements: [], viewport: { x: 0, y: 0, zoom: 1 } } : loadBoard()))
   const [settings] = useState(loadSettings)
-  const board = useBoard(() => saved.elements)
+  const sync = useRef<SyncClient | null>(null)
+  const board = useBoard(
+    () => saved.elements,
+    (patch) => sync.current?.local(patch),
+  )
   const [viewport, setViewport] = useState<Viewport>(saved.viewport)
+  const [me, setMe] = useState(loadIdentity)
+  const [status, setStatus] = useState<SyncStatus>('connecting')
+  const [peers, setPeers] = useState<PeerPresence[]>([])
+  const cursor = useRef<Point | null>(null)
   const [tool, setToolState] = useState<Tool>('select')
   const [shapeKind, setShapeKind] = useState<ShapeKind>('rectangle')
-  const [linePreset, setLinePreset] = useState(1)
+  const [lineStyle, setLineStyle] = useState<LineStyle>(settings.line)
   const [pen, setPen] = useState(settings.pen)
   const [style, setStyle] = useState(settings.style)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -65,6 +82,16 @@ export default function App() {
     return selectedIds.filter((id) => ids.has(id))
   }, [elements, selectedIds])
   const selSet = new Set(selection)
+  // Selected lines, if any: the palette's line options then edit these instead of the tool.
+  const selectedLines = elements.filter((el): el is LineElement => el.type === 'line' && selSet.has(el.id))
+  const shownLineStyle: LineStyle = selectedLines.length
+    ? {
+        dash: selectedLines[0].dash,
+        startCap: selectedLines[0].startCap,
+        endCap: selectedLines[0].endCap,
+        routing: selectedLines[0].routing,
+      }
+    : lineStyle
   const soleCurve = (() => {
     if (selection.length !== 1) return null
     const el = elements.find((e) => e.id === selection[0])
@@ -74,24 +101,101 @@ export default function App() {
   const liveNode =
     soleCurve && activeNode?.id === soleCurve.id && activeNode.index < nodeCount(soleCurve) ? activeNode : null
 
-  // ----- Persistence -----
+  // ----- Persistence (private board only; shared boards live on the server) -----
   const latest = useRef({ elements, viewport })
   latest.current = { elements, viewport }
 
   useEffect(() => {
+    if (boardId) return
     const t = setTimeout(() => {
       if (!saveBoard({ elements, viewport })) showToast('Could not save — browser storage is full or disabled')
     }, 300)
     return () => clearTimeout(t)
-  }, [elements, viewport])
+  }, [boardId, elements, viewport])
 
   useEffect(() => {
+    if (boardId) return
     const flush = () => saveBoard(latest.current)
     window.addEventListener('pagehide', flush)
     return () => window.removeEventListener('pagehide', flush)
-  }, [])
+  }, [boardId])
 
-  useEffect(() => saveSettings({ pen, style }), [pen, style])
+  // ----- Collaboration -----
+  useEffect(() => {
+    if (!boardId) return
+    // A fresh id per connection, so a replaced connection's departure never hides its successor.
+    const clientId = newId()
+    setMe((m) => ({ ...m, clientId }))
+    const client = new SyncClient(boardId, { ...me, clientId }, {
+      onState(els, initial) {
+        board.applyRemote(els)
+        if (initial && els.length === 0) {
+          // A board just created from "Share": upload the private board's content.
+          const seed = sanitizeElements(takeSeed(boardId))
+          if (seed.length) board.update(() => seed)
+        }
+      },
+      onStatus: setStatus,
+      onPeers: setPeers,
+      onError: showToast,
+    })
+    sync.current = client
+    return () => {
+      client.close()
+      sync.current = null
+    }
+    // Identity changes are sent as presence, so `me` isn't a dependency (no reconnect on rename).
+  }, [boardId])
+
+  useEffect(() => {
+    sync.current?.setPresence(cursor.current, selection, me)
+  }, [selection, me])
+
+  const onCursor = (p: Point | null) => {
+    cursor.current = p
+    sync.current?.setPresence(p, selection, me)
+  }
+
+  const share = async () => {
+    if (!boardId) {
+      // Turn the private board into a new shared one (the private copy stays as it is).
+      const id = newBoardId()
+      stashSeed(id, board.get())
+      location.assign(`/board/${id}`)
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(location.href)
+      showToast('Link copied — anyone with it can view and edit this board')
+    } catch {
+      window.prompt('Copy this link to share the board:', location.href)
+    }
+  }
+
+  const rename = () => {
+    const name = window.prompt('Your name, as others see it:', me.name)?.trim()
+    if (!name) return
+    const next = { ...me, name: name.slice(0, 40) }
+    saveIdentity(next)
+    setMe(next)
+  }
+
+  useEffect(() => saveSettings({ pen, style, line: lineStyle }), [pen, style, lineStyle])
+
+  /**
+   * A line option was picked in the palette. With lines selected it restyles
+   * them (and becomes the tool's default too); otherwise it sets up the Line
+   * tool and switches to it, ready to draw.
+   */
+  const changeLineStyle = (patch: Partial<LineStyle>) => {
+    setLineStyle((s) => ({ ...s, ...patch }))
+    if (selectedLines.length) {
+      const ids = new Set(selectedLines.map((l) => l.id))
+      board.change((els) => els.map((el) => (el.type === 'line' && ids.has(el.id) ? { ...el, ...patch } : el)))
+    } else {
+      setTool('line')
+    }
+  }
 
   useEffect(() => {
     if (!toast) return
@@ -145,8 +249,36 @@ export default function App() {
   }
 
   function selectionCenter() {
-    const b = contentBounds(chosen())
+    const b = contentBounds(chosen(), board.get())
     return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 } : null
+  }
+
+  // ----- Export -----
+  const [exportOpen, setExportOpen] = useState(false)
+  /** Remembered between exports in this session. */
+  const [exportChoice, setExportChoice] = useState<ExportChoice>({
+    format: 'png',
+    selectionOnly: false,
+    background: 'white',
+    scale: 2,
+    page: 'fit',
+  })
+
+  const openExport = () => {
+    if (!board.get().length) {
+      showToast('Nothing to export yet')
+      return
+    }
+    setEditing(null)
+    setExportOpen(true)
+  }
+
+  const runExport = async (choice: ExportChoice) => {
+    setExportChoice(choice)
+    const ids = choice.selectionOnly && selection.length ? new Set(selection) : null
+    const ok = svgRef.current && (await exportBoard(svgRef.current, board.get(), { ...choice, ids, boardId }))
+    setExportOpen(false)
+    if (!ok) showToast('Nothing to export yet')
   }
 
   const copy = () => {
@@ -203,7 +335,8 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target
       if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return
-      if (editing) return
+      // A label being edited or a dialog owns the keyboard.
+      if (editing || exportOpen) return
       const mod = e.ctrlKey || e.metaKey
       const key = e.key
 
@@ -214,6 +347,11 @@ export default function App() {
       }
       if (mod) {
         const k = key.toLowerCase()
+        if (e.shiftKey && k === 'e') {
+          e.preventDefault()
+          openExport()
+          return
+        }
         const fn: Record<string, () => void> = {
           z: () => (e.shiftKey ? board.redo() : board.undo()),
           y: board.redo,
@@ -306,12 +444,10 @@ export default function App() {
         b: () => setTool('curve'),
         e: () => setTool('eraser'),
         t: () => setTool('text'),
-        l: () => {
-          setLinePreset(0)
-          setTool('line')
-        },
+        l: () => setTool('line'),
+        // "Arrow": the Line tool, making sure the end has an arrowhead.
         a: () => {
-          setLinePreset(1)
+          setLineStyle((s) => (s.endCap === 'none' ? { ...s, endCap: 'triangle' } : s))
           setTool('line')
         },
       }
@@ -340,7 +476,7 @@ export default function App() {
         tool={tool}
         onTool={setTool}
         shapeKind={shapeKind}
-        linePreset={LINE_PRESETS[linePreset]}
+        lineStyle={lineStyle}
         pen={pen}
         style={style}
         selectedIds={selection}
@@ -352,20 +488,20 @@ export default function App() {
         spaceHeld={spaceHeld}
         actions={actions}
         svgRef={svgRef}
+        peers={peers}
+        onCursor={boardId ? onCursor : undefined}
       />
       <Palette
         tool={tool}
         shapeKind={shapeKind}
-        linePreset={linePreset}
         pen={pen}
+        lineStyle={shownLineStyle}
+        editingSelectedLines={selectedLines.length > 0}
+        onLineStyle={changeLineStyle}
         onTool={setTool}
         onShape={(kind) => {
           setShapeKind(kind)
           setTool('shape')
-        }}
-        onLinePreset={(i) => {
-          setLinePreset(i)
-          setTool('line')
         }}
         onPen={(patch: Partial<PenSettings>) => setPen((p) => ({ ...p, ...patch }))}
       />
@@ -379,15 +515,16 @@ export default function App() {
         onZoomOut={() => zoomBy(1 / 1.2)}
         onZoomReset={() => zoomBy(1 / viewport.zoom)}
         onZoomFit={() => zoomFit()}
-        onExportSvg={() => {
-          if (!svgRef.current || !exportSvg(svgRef.current, board.get())) showToast('Nothing to export yet')
-        }}
-        onExportPng={async () => {
-          try {
-            if (!svgRef.current || !(await exportPng(svgRef.current, board.get()))) showToast('Nothing to export yet')
-          } catch {
-            showToast('This browser blocked PNG export — try SVG instead')
-          }
+        onExport={openExport}
+        collab={{
+          shared: !!boardId,
+          status,
+          peers,
+          me,
+          onShare: share,
+          onRename: rename,
+          onNewShared: () => location.assign(`/board/${newBoardId()}`),
+          onOpenPrivate: () => location.assign('/'),
         }}
         onSave={() => saveBoardFile(board.get())}
         onOpen={openFile}
@@ -401,6 +538,15 @@ export default function App() {
       <div className="hint" aria-live="polite">
         {tool === 'select' && soleCurve ? CURVE_EDIT_HINT : HINTS[tool]}
       </div>
+      {exportOpen && (
+        <ExportDialog
+          selectionCount={selection.length}
+          initial={exportChoice}
+          pngSize={(c) => pngSize(board.get(), c.selectionOnly && selection.length ? new Set(selection) : null, c.scale)}
+          onExport={runExport}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           {toast}

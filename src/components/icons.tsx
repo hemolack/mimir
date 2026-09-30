@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
-import { capPath, dashArray, shapeDetail, shapePath } from '../geometry'
-import type { Cap, LinePreset, ShapeKind } from '../types'
+import { capPath, dashArray, offsetPolyline, polylinePath, roundedPath, shapeDetail, shapePath } from '../geometry'
+import type { CapFill } from '../geometry'
+import type { Cap, LineStyle, Point, Routing, ShapeKind } from '../types'
 
 function Icon({ children, size = 20 }: { children: ReactNode; size?: number }) {
   return (
@@ -42,6 +43,14 @@ export const CurveIcon = () => (
     <circle cx="4" cy="18" r="1.6" fill="currentColor" />
     <circle cx="12" cy="12" r="1.6" fill="currentColor" />
     <circle cx="20" cy="6" r="1.6" fill="currentColor" />
+  </Icon>
+)
+export const ShareIcon = () => (
+  <Icon size={18}>
+    <circle cx="18" cy="5" r="2.5" />
+    <circle cx="6" cy="12" r="2.5" />
+    <circle cx="18" cy="19" r="2.5" />
+    <path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4" />
   </Icon>
 )
 export const MoveIcon = () => (
@@ -181,6 +190,18 @@ export const StraightIcon = () => (
     <path d="M4 18L20 6" />
   </Icon>
 )
+export const CurvedElbowIcon = () => (
+  <Icon size={18}>
+    <path d="M4 6h3.5a4.5 4.5 0 0 1 4.5 4.5v3a4.5 4.5 0 0 0 4.5 4.5H20" />
+  </Icon>
+)
+
+/** Icon for a line route option. */
+export function RouteIcon({ routing }: { routing: Routing }) {
+  if (routing === 'elbow') return <ElbowIcon />
+  if (routing === 'curved-elbow') return <CurvedElbowIcon />
+  return <StraightIcon />
+}
 
 export function ShapeIcon({ kind }: { kind: ShapeKind }) {
   const square = kind === 'square' || kind === 'circle'
@@ -197,9 +218,14 @@ export function ShapeIcon({ kind }: { kind: ShapeKind }) {
   )
 }
 
-export function LineIcon({ preset }: { preset: Pick<LinePreset, 'dash' | 'startCap' | 'endCap' | 'routing'> }) {
-  const pts =
-    preset.routing === 'elbow'
+/** Icons paint caps in the current text color; hollow caps get the panel color inside. */
+const iconCapFill = (fill: CapFill) => (fill === 'stroke' ? 'currentColor' : fill === 'paper' ? '#fff' : 'none')
+
+/** A line with dashes/caps drawn as they'd look; used for the Line tool options and menus. */
+export function LineIcon({ style }: { style: Partial<LineStyle> }) {
+  const { dash = 'solid', startCap = 'none', endCap = 'none', routing = 'straight' } = style
+  const pts: Point[] =
+    routing !== 'straight'
       ? [
           { x: 3, y: 18 },
           { x: 12, y: 18 },
@@ -210,25 +236,55 @@ export function LineIcon({ preset }: { preset: Pick<LinePreset, 'dash' | 'startC
           { x: 3, y: 20 },
           { x: 21, y: 4 },
         ]
-  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' ')
   const n = pts.length
-  const caps = [capPath(preset.startCap, pts[0], pts[1], 0.4), capPath(preset.endCap, pts[n - 1], pts[n - 2], 0.4)]
+  const caps = [capPath(startCap, pts[0], pts[1], 0.4), capPath(endCap, pts[n - 1], pts[n - 2], 0.4)]
+  // Icon-sized corner radius for curved elbows.
+  const path = (p: Point[], offset = 0) => (routing === 'curved-elbow' ? roundedPath(p, 4, offset) : polylinePath(p))
   return (
     <svg width={24} height={24} viewBox="0 0 24 24" aria-hidden="true">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth={1.8} strokeDasharray={dashArray(preset.dash, 1.2)} strokeLinecap="round" strokeLinejoin="round" />
-      {caps.map((c, i) => c && <path key={i} d={c.d} fill={c.filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />)}
+      {dash === 'double' ? (
+        [1.6, -1.6].map((o) => (
+          <path key={o} d={path(offsetPolyline(pts, o), o)} fill="none" stroke="currentColor" strokeWidth={1.1} strokeLinejoin="miter" />
+        ))
+      ) : (
+        <path
+          d={path(pts)}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.8}
+          strokeDasharray={dashArray(dash, 1.2)}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+      {caps.map(
+        (c, i) =>
+          c && (
+            <path key={i} d={c.d} fill={iconCapFill(c.fill)} stroke="currentColor" strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+          ),
+      )}
     </svg>
   )
 }
 
+/** One line end, pointing left (`flip`, for start caps) or right. */
 export function CapIcon({ cap, flip }: { cap: Cap; flip?: boolean }) {
-  const a = { x: flip ? 20 : 4, y: 12 }
+  const a = { x: flip ? 21 : 3, y: 12 }
   const b = { x: flip ? 4 : 20, y: 12 }
   const c = capPath(cap, b, a, 0.4)
   return (
     <svg width={24} height={24} viewBox="0 0 24 24" aria-hidden="true">
       <path d={`M${a.x} 12 L${b.x} 12`} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" />
-      {c && <path d={c.d} fill={c.filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />}
+      {c && <path d={c.d} fill={iconCapFill(c.fill)} stroke="currentColor" strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />}
     </svg>
   )
 }
+
+/** The Line tool itself. */
+export const LineToolIcon = () => (
+  <Icon>
+    <path d="M4 20L20 4" />
+    <circle cx="4" cy="20" r="1.6" fill="currentColor" />
+    <circle cx="20" cy="4" r="1.6" fill="currentColor" />
+  </Icon>
+)

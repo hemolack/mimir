@@ -1,5 +1,5 @@
-import { DEFAULT_PEN, DEFAULT_STYLE } from './constants'
-import type { BoardElement, PenSettings, StyleDefaults, Viewport } from './types'
+import { DEFAULT_LINE, DEFAULT_PEN, DEFAULT_STYLE } from './constants.ts'
+import type { BoardElement, LineStyle, PenSettings, StyleDefaults, Viewport } from './types.ts'
 
 const BOARD_KEY = 'whiteboard.board.v1'
 const SETTINGS_KEY = 'whiteboard.settings.v1'
@@ -12,6 +12,7 @@ export interface SavedBoard {
 export interface SavedSettings {
   style: StyleDefaults
   pen: PenSettings
+  line: LineStyle
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
@@ -92,9 +93,11 @@ export function loadSettings(): SavedSettings {
   const raw = read(SETTINGS_KEY)
   const style = isObj(raw) && isObj(raw.style) ? raw.style : {}
   const pen = isObj(raw) && isObj(raw.pen) ? raw.pen : {}
+  const line = isObj(raw) && isObj(raw.line) ? raw.line : {}
   return {
     style: { ...DEFAULT_STYLE, ...(style as Partial<StyleDefaults>) },
     pen: { ...DEFAULT_PEN, ...(pen as Partial<PenSettings>) },
+    line: { ...DEFAULT_LINE, ...(line as Partial<LineStyle>) },
   }
 }
 

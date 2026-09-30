@@ -7,6 +7,7 @@ import type {
   LineElement,
   Point,
   Rect,
+  Routing,
   ShapeElement,
   ShapeKind,
 } from './types'
@@ -278,7 +279,7 @@ export function linePoints(line: LineElement, map: ElementMap): Point[] {
   const refA = a ? center(a) : line.start
   const refB = b ? center(b) : line.end
 
-  if (line.routing === 'elbow') {
+  if (line.routing === 'elbow' || line.routing === 'curved-elbow') {
     const horizontal = Math.abs(refB.x - refA.x) >= Math.abs(refB.y - refA.y)
     const s = a ? sideAnchor(a, refB, horizontal) : line.start
     const e = b ? sideAnchor(b, refA, horizontal) : line.end
@@ -317,8 +318,54 @@ export function polylinePath(points: Point[]): string {
   return points.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' ')
 }
 
+/** Corner radius for curved-elbow lines. */
+export const ELBOW_RADIUS = 16
+
+/**
+ * SVG path for a polyline with rounded corners. Each corner's radius shrinks to
+ * fit so corners never overlap: a middle segment is shared by two corners (each
+ * may use half of it); an end segment belongs to one corner (it may use all of it).
+ * `offset` is for the rails of a double line: the rail on the outside of a turn
+ * gets a larger radius and the inside one a smaller one, keeping them concentric.
+ */
+export function roundedPath(points: Point[], radius: number, offset = 0): string {
+  if (points.length < 3) return polylinePath(points)
+  let d = `M${points[0].x} ${points[0].y}`
+  for (let i = 1; i < points.length - 1; i++) {
+    const a = points[i - 1]
+    const b = points[i]
+    const c = points[i + 1]
+    const l1 = Math.hypot(b.x - a.x, b.y - a.y)
+    const l2 = Math.hypot(c.x - b.x, c.y - b.y)
+    if (l1 === 0 || l2 === 0) continue
+    // Screen coordinates (y down): cross > 0 is a clockwise (right) turn, whose outside is the left (+offset) side.
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+    const turn = cross > 0 ? 1 : cross < 0 ? -1 : 0
+    const max1 = i === 1 ? l1 : l1 / 2
+    const max2 = i === points.length - 2 ? l2 : l2 / 2
+    const r = Math.max(0, Math.min(radius + turn * offset, max1, max2))
+    const p1 = { x: b.x - ((b.x - a.x) / l1) * r, y: b.y - ((b.y - a.y) / l1) * r }
+    const p2 = { x: b.x + ((c.x - b.x) / l2) * r, y: b.y + ((c.y - b.y) / l2) * r }
+    d += ` L${p1.x} ${p1.y} Q${b.x} ${b.y} ${p2.x} ${p2.y}`
+  }
+  const last = points[points.length - 1]
+  return `${d} L${last.x} ${last.y}`
+}
+
+/** The SVG path for a line's (already routed) points, rounding corners for curved elbows. */
+export function linePath(points: Point[], routing: Routing, offset = 0): string {
+  return routing === 'curved-elbow' ? roundedPath(points, ELBOW_RADIUS, offset) : polylinePath(points)
+}
+
+/**
+ * How a cap is painted: 'stroke' = filled with the line color, 'paper' = hollow
+ * (filled white so the line underneath doesn't show through), 'none' = outline only.
+ */
+export type CapFill = 'stroke' | 'paper' | 'none'
+export const PAPER = '#ffffff'
+
 /** Geometry for an arrowhead/cap at `tip`, pointing away from `from`. */
-export function capPath(cap: Cap, tip: Point, from: Point, strokeWidth: number) {
+export function capPath(cap: Cap, tip: Point, from: Point, strokeWidth: number): { d: string; fill: CapFill } | null {
   if (cap === 'none') return null
   const angle = Math.atan2(tip.y - from.y, tip.x - from.x)
   const len = 8 + strokeWidth * 3
@@ -327,36 +374,126 @@ export function capPath(cap: Cap, tip: Point, from: Point, strokeWidth: number) 
     y: tip.y - l * Math.sin(a),
   })
   const spread = 0.45
+  const hollow = cap.endsWith('-open')
   switch (cap) {
     case 'arrow': {
       const p1 = at(angle - spread, len)
       const p2 = at(angle + spread, len)
-      return { d: `M${p1.x} ${p1.y} L${tip.x} ${tip.y} L${p2.x} ${p2.y}`, filled: false }
+      return { d: `M${p1.x} ${p1.y} L${tip.x} ${tip.y} L${p2.x} ${p2.y}`, fill: 'none' }
     }
-    case 'triangle': {
+    case 'triangle':
+    case 'triangle-open': {
       const p1 = at(angle - spread, len)
       const p2 = at(angle + spread, len)
-      return { d: `M${tip.x} ${tip.y} L${p1.x} ${p1.y} L${p2.x} ${p2.y} Z`, filled: true }
+      return { d: `M${tip.x} ${tip.y} L${p1.x} ${p1.y} L${p2.x} ${p2.y} Z`, fill: hollow ? 'paper' : 'stroke' }
     }
-    case 'circle': {
+    case 'circle':
+    case 'circle-open': {
       const r = 3 + strokeWidth * 1.2
       const c = at(angle, r)
       return {
         d: `M${c.x - r} ${c.y} A${r} ${r} 0 1 0 ${c.x + r} ${c.y} A${r} ${r} 0 1 0 ${c.x - r} ${c.y} Z`,
-        filled: true,
+        fill: hollow ? 'paper' : 'stroke',
       }
     }
-    case 'diamond': {
+    case 'diamond':
+    case 'diamond-open': {
       const back = at(angle, len * 1.2)
       const mid = at(angle, len * 0.6)
       const nx = -Math.sin(angle) * len * 0.35
       const ny = Math.cos(angle) * len * 0.35
       return {
         d: `M${tip.x} ${tip.y} L${mid.x + nx} ${mid.y + ny} L${back.x} ${back.y} L${mid.x - nx} ${mid.y - ny} Z`,
-        filled: true,
+        fill: hollow ? 'paper' : 'stroke',
       }
     }
+    case 'bar': {
+      const half = len * 0.45
+      const nx = -Math.sin(angle) * half
+      const ny = Math.cos(angle) * half
+      return { d: `M${tip.x + nx} ${tip.y + ny} L${tip.x - nx} ${tip.y - ny}`, fill: 'none' }
+    }
   }
+}
+
+/**
+ * How far back from the tip the line itself should stop for a cap, so it meets
+ * the cap's back edge instead of running through (and, for double lines, past)
+ * a closed shape. Open strokes (arrow, bar) keep the line going to the tip.
+ */
+export function capInset(cap: Cap, strokeWidth: number): number {
+  const len = 8 + strokeWidth * 3
+  switch (cap) {
+    case 'triangle':
+    case 'triangle-open':
+      return len * Math.cos(0.45)
+    case 'circle':
+    case 'circle-open':
+      return (3 + strokeWidth * 1.2) * 2
+    case 'diamond':
+    case 'diamond-open':
+      return len * 1.2
+    default:
+      return 0
+  }
+}
+
+/** The polyline with `start` and `end` lengths cut off its ends (never past its middle). */
+export function trimPolyline(points: Point[], start: number, end: number): Point[] {
+  if (points.length < 2 || (start <= 0 && end <= 0)) return points
+  const total = points.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - points[i].x, p.y - points[i].y), 0)
+  const limit = total * 0.49
+  const cut = (pts: Point[], amount: number): Point[] => {
+    let remaining = Math.min(amount, limit)
+    const out = [...pts]
+    while (remaining > 0 && out.length > 1) {
+      const [a, b] = out
+      const seg = Math.hypot(b.x - a.x, b.y - a.y)
+      if (seg > remaining) {
+        const t = remaining / seg
+        out[0] = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+        break
+      }
+      remaining -= seg
+      out.shift()
+    }
+    return out
+  }
+  return cut(cut(points, start).reverse(), end).reverse()
+}
+
+/** Resolve a cap's fill kind to a paint value. */
+export const capFillColor = (fill: CapFill, stroke: string) => (fill === 'stroke' ? stroke : fill === 'paper' ? PAPER : 'none')
+
+/**
+ * The polyline shifted sideways by `offset` (positive = left of travel), with
+ * mitred corners. Used to draw the two rails of a double line.
+ */
+export function offsetPolyline(points: Point[], offset: number): Point[] {
+  const normals = points.slice(1).map((p, i) => {
+    const dx = p.x - points[i].x
+    const dy = p.y - points[i].y
+    const len = Math.hypot(dx, dy) || 1
+    return { x: dy / len, y: -dx / len }
+  })
+  if (normals.length === 0) return points
+  return points.map((p, i) => {
+    const n1 = normals[Math.max(0, i - 1)]
+    const n2 = normals[Math.min(normals.length - 1, i)]
+    const mx = n1.x + n2.x
+    const my = n1.y + n2.y
+    const ml = Math.hypot(mx, my)
+    if (ml < 1e-6) return { x: p.x + n1.x * offset, y: p.y + n1.y * offset } // reversal: no sensible miter
+    const m = { x: mx / ml, y: my / ml }
+    // Stretch the miter so both rails stay `offset` from each segment (capped for sharp angles).
+    const scale = offset / Math.max(m.x * n1.x + m.y * n1.y, 0.25)
+    return { x: p.x + m.x * scale, y: p.y + m.y * scale }
+  })
+}
+
+/** Rail geometry for a double line of the given stroke width. */
+export function doubleRails(strokeWidth: number) {
+  return { railWidth: Math.max(1, strokeWidth * 0.6), offset: strokeWidth * 0.8 + 1 }
 }
 
 // ---------- Misc ----------

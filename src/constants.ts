@@ -1,4 +1,4 @@
-import type { LinePreset, PenSettings, ShapeKind, StyleDefaults } from './types'
+import type { Cap, DashStyle, LineStyle, PenSettings, Routing, ShapeKind, StyleDefaults } from './types.ts'
 
 export const FONT_FAMILY =
   'ui-rounded, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif'
@@ -13,6 +13,18 @@ export const STROKE_COLORS = [
   '#9c36b5',
   '#868e96',
 ]
+
+/** Names for the palette colors (tooltips and screen readers). */
+export const COLOR_NAMES: Record<string, string> = {
+  '#1e1e1e': 'Black',
+  '#e03131': 'Red',
+  '#f08c00': 'Orange',
+  '#2f9e44': 'Green',
+  '#1971c2': 'Blue',
+  '#0c8599': 'Teal',
+  '#9c36b5': 'Purple',
+  '#868e96': 'Gray',
+}
 
 export const FILL_COLORS = [
   'none',
@@ -44,14 +56,32 @@ export const SHAPES: { kind: ShapeKind; name: string; key?: string }[] = [
   { kind: 'document', name: 'Document' },
 ]
 
-export const LINE_PRESETS: LinePreset[] = [
-  { name: 'Line', dash: 'solid', startCap: 'none', endCap: 'none', routing: 'straight' },
-  { name: 'Arrow', dash: 'solid', startCap: 'none', endCap: 'arrow', routing: 'straight' },
-  { name: 'Double arrow', dash: 'solid', startCap: 'arrow', endCap: 'arrow', routing: 'straight' },
-  { name: 'Dashed arrow', dash: 'dashed', startCap: 'none', endCap: 'triangle', routing: 'straight' },
-  { name: 'Dotted line', dash: 'dotted', startCap: 'none', endCap: 'none', routing: 'straight' },
-  { name: 'Elbow connector', dash: 'solid', startCap: 'none', endCap: 'triangle', routing: 'elbow' },
+export const LINE_DASHES: { value: DashStyle; name: string }[] = [
+  { value: 'solid', name: 'Solid' },
+  { value: 'dashed', name: 'Dashed' },
+  { value: 'dotted', name: 'Dotted' },
+  { value: 'double', name: 'Double' },
 ]
+
+export const LINE_CAPS: { value: Cap; name: string }[] = [
+  { value: 'none', name: 'None' },
+  { value: 'arrow', name: 'Arrow' },
+  { value: 'triangle', name: 'Solid triangle' },
+  { value: 'triangle-open', name: 'Hollow triangle' },
+  { value: 'circle', name: 'Solid circle' },
+  { value: 'circle-open', name: 'Hollow circle' },
+  { value: 'diamond', name: 'Solid diamond' },
+  { value: 'diamond-open', name: 'Hollow diamond' },
+  { value: 'bar', name: 'Bar' },
+]
+
+export const LINE_ROUTES: { value: Routing; name: string }[] = [
+  { value: 'straight', name: 'Straight' },
+  { value: 'elbow', name: 'Elbow' },
+  { value: 'curved-elbow', name: 'Curved elbow' },
+]
+
+export const DEFAULT_LINE: LineStyle = { dash: 'solid', startCap: 'none', endCap: 'triangle', routing: 'straight' }
 
 export const DEFAULT_STYLE: StyleDefaults = {
   stroke: '#1e1e1e',

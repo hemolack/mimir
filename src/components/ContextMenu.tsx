@@ -1,22 +1,21 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { FILL_COLORS, FONT_SIZES, STROKE_COLORS, STROKE_WIDTHS } from '../constants'
+import { FILL_COLORS, FONT_SIZES, LINE_CAPS, LINE_DASHES, LINE_ROUTES, STROKE_COLORS, STROKE_WIDTHS } from '../constants'
 import { isLabelable } from '../ops'
-import type { BoardElement, Cap, CurveElement, DashStyle, Rect, ShapeElement, StyleDefaults } from '../types'
+import type { BoardElement, CurveElement, Rect, ShapeElement, StyleDefaults } from '../types'
 import {
   BackIcon,
   CapIcon,
   CopyIcon,
   CornerPointIcon,
   DeletePointIcon,
-  ElbowIcon,
   FlipHIcon,
   FlipVIcon,
   Rotate90Icon,
+  RouteIcon,
   SmoothPointIcon,
   FrontIcon,
   LabelIcon,
   LineIcon,
-  StraightIcon,
   TrashIcon,
 } from './icons'
 
@@ -39,8 +38,6 @@ export interface ContextMenuProps {
   nodeActions?: { smooth: boolean; onToggleSmooth(): void; onDelete(): void }
 }
 
-const CAPS: Cap[] = ['none', 'arrow', 'triangle', 'circle', 'diamond']
-const DASHES: DashStyle[] = ['solid', 'dashed', 'dotted']
 
 function Swatch({ color, active, onClick, label }: { color: string; active: boolean; onClick(): void; label: string }) {
   return (
@@ -67,6 +64,7 @@ export function ContextMenu(p: ContextMenuProps) {
     (el): el is ShapeElement | CurveElement => el.type === 'shape' || (el.type === 'curve' && el.closed),
   )
   const hasText = shapes.length > 0 || lines.length > 0
+  const onlyLines = lines.length > 0 && lines.length === p.selected.length
   const single = p.selected.length === 1 && isLabelable(first) ? first : null
 
   const stroke = first.stroke
@@ -155,7 +153,7 @@ export function ContextMenu(p: ContextMenuProps) {
             aria-label="Line and text style"
             onClick={() => toggle('style')}
           >
-            <LineIcon preset={{ dash: outlined.dash, startCap: 'none', endCap: 'none', routing: 'straight' }} />
+            <LineIcon style={{ dash: outlined.dash }} />
           </button>
         )}
         {lines.length > 0 && (
@@ -166,7 +164,7 @@ export function ContextMenu(p: ContextMenuProps) {
             aria-label="Arrowheads and routing"
             onClick={() => toggle('caps')}
           >
-            <LineIcon preset={{ dash: 'solid', startCap: line.startCap, endCap: line.endCap, routing: line.routing }} />
+            <LineIcon style={{ startCap: line.startCap, endCap: line.endCap, routing: line.routing }} />
           </button>
         )}
         <span className="menu-sep" />
@@ -250,16 +248,19 @@ export function ContextMenu(p: ContextMenuProps) {
           </div>
           <div className="popover-row">
             <span className="popover-label">Style</span>
-            {DASHES.map((d) => (
+            {/* Double is a line style; it's offered only when every selected item is a line. */}
+            {LINE_DASHES.filter((d) => d.value !== 'double' || onlyLines).map(({ value: d, name }) => (
               <button
                 key={d}
                 type="button"
                 className={`tool-btn small${outlined.dash === d ? ' active' : ''}`}
-                title={d}
-                aria-label={`${d} stroke`}
-                onClick={() => p.onPatch((el) => (el.type === 'path' ? el : { ...el, dash: d }), { dash: d })}
+                title={name}
+                aria-label={`${name} stroke`}
+                onClick={() =>
+                  p.onPatch((el) => (el.type === 'path' ? el : { ...el, dash: d }), d === 'double' ? undefined : { dash: d })
+                }
               >
-                <LineIcon preset={{ dash: d, startCap: 'none', endCap: 'none', routing: 'straight' }} />
+                <LineIcon style={{ dash: d }} />
               </button>
             ))}
           </div>
@@ -291,13 +292,13 @@ export function ContextMenu(p: ContextMenuProps) {
         <div className="popover">
           <div className="popover-row">
             <span className="popover-label">Start</span>
-            {CAPS.map((c) => (
+            {LINE_CAPS.map(({ value: c, name }) => (
               <button
                 key={c}
                 type="button"
                 className={`tool-btn small${line.startCap === c ? ' active' : ''}`}
-                title={`Start: ${c}`}
-                aria-label={`Start cap ${c}`}
+                title={`Start: ${name}`}
+                aria-label={`Start: ${name}`}
                 onClick={() => p.onPatch((el) => (el.type === 'line' ? { ...el, startCap: c } : el))}
               >
                 <CapIcon cap={c} flip />
@@ -306,13 +307,13 @@ export function ContextMenu(p: ContextMenuProps) {
           </div>
           <div className="popover-row">
             <span className="popover-label">End</span>
-            {CAPS.map((c) => (
+            {LINE_CAPS.map(({ value: c, name }) => (
               <button
                 key={c}
                 type="button"
                 className={`tool-btn small${line.endCap === c ? ' active' : ''}`}
-                title={`End: ${c}`}
-                aria-label={`End cap ${c}`}
+                title={`End: ${name}`}
+                aria-label={`End: ${name}`}
                 onClick={() => p.onPatch((el) => (el.type === 'line' ? { ...el, endCap: c } : el))}
               >
                 <CapIcon cap={c} />
@@ -321,24 +322,18 @@ export function ContextMenu(p: ContextMenuProps) {
           </div>
           <div className="popover-row">
             <span className="popover-label">Route</span>
-            <button
-              type="button"
-              className={`tool-btn small${line.routing === 'straight' ? ' active' : ''}`}
-              title="Straight"
-              aria-label="Straight line"
-              onClick={() => p.onPatch((el) => (el.type === 'line' ? { ...el, routing: 'straight' } : el))}
-            >
-              <StraightIcon />
-            </button>
-            <button
-              type="button"
-              className={`tool-btn small${line.routing === 'elbow' ? ' active' : ''}`}
-              title="Elbow"
-              aria-label="Elbow line"
-              onClick={() => p.onPatch((el) => (el.type === 'line' ? { ...el, routing: 'elbow' } : el))}
-            >
-              <ElbowIcon />
-            </button>
+            {LINE_ROUTES.map(({ value: r, name }) => (
+              <button
+                key={r}
+                type="button"
+                className={`tool-btn small${line.routing === r ? ' active' : ''}`}
+                title={name}
+                aria-label={`Route: ${name}`}
+                onClick={() => p.onPatch((el) => (el.type === 'line' ? { ...el, routing: r } : el))}
+              >
+                <RouteIcon routing={r} />
+              </button>
+            ))}
           </div>
         </div>
       )}

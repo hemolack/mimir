@@ -2,17 +2,22 @@ import { memo, useMemo } from 'react'
 import { getStroke } from 'perfect-freehand'
 import { FONT_FAMILY } from '../constants'
 import {
+  capFillColor,
+  capInset,
   capPath,
+  trimPolyline,
   dashArray,
+  doubleRails,
+  offsetPolyline,
   labelBox,
   polylineMidpoint,
-  polylinePath,
+  linePath,
   shapeDetail,
   shapePath,
   svgPathFromStroke,
 } from '../geometry'
 import { bezierPath } from '../curveFit'
-import type { CurveElement, LineElement, PathElement, Point, Rect, ShapeElement } from '../types'
+import type { CurveElement, LineElement, PathElement, Point, Rect, Routing, ShapeElement } from '../types'
 
 const labelColor = (stroke: string) => (stroke === 'none' || stroke === 'transparent' ? '#1e1e1e' : stroke)
 
@@ -98,35 +103,63 @@ export const ShapeView = memo(function ShapeView({ el, hideLabel }: { el: ShapeE
   )
 })
 
+/** A double line: two thinner parallel strokes either side of the path. */
+export function DoubleRails(props: { points: Point[]; routing: Routing; stroke: string; strokeWidth: number }) {
+  const { points, routing, stroke, strokeWidth } = props
+  const { railWidth, offset } = doubleRails(strokeWidth)
+  return (
+    <>
+      {[offset, -offset].map((o) => (
+        <path
+          key={o}
+          d={linePath(offsetPolyline(points, o), routing, o)}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={railWidth}
+          strokeLinecap="butt"
+          strokeLinejoin="miter"
+          pointerEvents="none"
+        />
+      ))}
+    </>
+  )
+}
+
 export function LineView({ el, points, hideLabel }: { el: LineElement; points: Point[]; hideLabel: boolean }) {
-  const d = polylinePath(points)
+  const d = linePath(points, el.routing)
   const n = points.length
   const caps =
     n > 1
       ? [capPath(el.startCap, points[0], points[1], el.strokeWidth), capPath(el.endCap, points[n - 1], points[n - 2], el.strokeWidth)]
       : []
   const mid = polylineMidpoint(points)
+  // The visible stroke stops where a closed end (triangle, circle, diamond) begins.
+  const drawn = trimPolyline(points, capInset(el.startCap, el.strokeWidth), capInset(el.endCap, el.strokeWidth))
   return (
     <g data-id={el.id}>
       {/* Wide invisible stroke makes thin lines easy to hit, especially on touch. */}
       <path d={d} fill="none" stroke="transparent" strokeWidth={Math.max(18, el.strokeWidth + 14)} pointerEvents="stroke" />
-      <path
-        d={d}
-        fill="none"
-        stroke={el.stroke}
-        strokeWidth={el.strokeWidth}
-        strokeDasharray={dashArray(el.dash, el.strokeWidth)}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        pointerEvents="none"
-      />
+      {el.dash === 'double' ? (
+        <DoubleRails points={drawn} routing={el.routing} stroke={el.stroke} strokeWidth={el.strokeWidth} />
+      ) : (
+        <path
+          d={linePath(drawn, el.routing)}
+          fill="none"
+          stroke={el.stroke}
+          strokeWidth={el.strokeWidth}
+          strokeDasharray={dashArray(el.dash, el.strokeWidth)}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          pointerEvents="none"
+        />
+      )}
       {caps.map(
         (cap, i) =>
           cap && (
             <path
               key={i}
               d={cap.d}
-              fill={cap.filled ? el.stroke : 'none'}
+              fill={capFillColor(cap.fill, el.stroke)}
               stroke={el.stroke}
               strokeWidth={el.strokeWidth}
               strokeLinecap="round"

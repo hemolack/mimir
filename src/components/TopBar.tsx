@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { MenuIcon, MinusIcon, PlusIcon, RedoIcon, UndoIcon } from './icons'
+import type { PeerInfo, PeerPresence } from '../protocol'
+import type { SyncStatus } from '../sync'
+import { MenuIcon, MinusIcon, PlusIcon, RedoIcon, ShareIcon, UndoIcon } from './icons'
 
 interface TopBarProps {
   zoom: number
@@ -11,11 +13,34 @@ interface TopBarProps {
   onZoomOut(): void
   onZoomReset(): void
   onZoomFit(): void
-  onExportSvg(): void
-  onExportPng(): void
+  onExport(): void
   onSave(): void
   onOpen(): void
   onClear(): void
+  collab: {
+    shared: boolean
+    status: SyncStatus
+    peers: PeerPresence[]
+    me: PeerInfo
+    onShare(): void
+    onRename(): void
+    onNewShared(): void
+    onOpenPrivate(): void
+  }
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join('')
+
+const STATUS_TEXT: Record<SyncStatus, string> = {
+  connecting: 'Connecting…',
+  online: 'Live — changes sync in real time',
+  offline: 'Offline — reconnecting; your edits will sync when it’s back',
 }
 
 export function TopBar(p: TopBarProps) {
@@ -45,8 +70,44 @@ export function TopBar(p: TopBarProps) {
     </button>
   )
 
+  const { collab } = p
+  // Other people, one avatar each (several tabs of the same person show separately).
+  const others = collab.peers.filter((peer) => peer.clientId !== collab.me.clientId)
+
   return (
     <div className="topbar">
+      <div className="panel row collab">
+        {collab.shared && (
+          <>
+            <span className={`status-dot ${collab.status}`} title={STATUS_TEXT[collab.status]} role="img" aria-label={STATUS_TEXT[collab.status]} />
+            <button
+              type="button"
+              className="avatar me"
+              style={{ background: collab.me.color }}
+              title={`You (${collab.me.name}) — click to rename`}
+              aria-label={`You: ${collab.me.name}. Rename`}
+              onClick={collab.onRename}
+            >
+              {initials(collab.me.name)}
+            </button>
+            {others.slice(0, 5).map((peer) => (
+              <span key={peer.clientId} className="avatar" style={{ background: peer.color }} title={peer.name} role="img" aria-label={peer.name}>
+                {initials(peer.name)}
+              </span>
+            ))}
+            {others.length > 5 && <span className="avatar more">+{others.length - 5}</span>}
+          </>
+        )}
+        <button
+          type="button"
+          className="share-btn"
+          title={collab.shared ? 'Copy link to this board' : 'Share: make a live copy of this board that others can join'}
+          onClick={collab.onShare}
+        >
+          <ShareIcon />
+          <span>{collab.shared ? 'Copy link' : 'Share'}</span>
+        </button>
+      </div>
       <div className="panel row">
         <button type="button" className="tool-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!p.canUndo} onClick={p.onUndo}>
           <UndoIcon />
@@ -81,8 +142,10 @@ export function TopBar(p: TopBarProps) {
         {menuOpen && (
           <div className="menu panel" role="menu">
             {item('Zoom to fit', p.onZoomFit)}
-            {item('Export as SVG', p.onExportSvg)}
-            {item('Export as PNG', p.onExportPng)}
+            {item('New shared board', collab.onNewShared)}
+            {collab.shared && item('Open my private board', collab.onOpenPrivate)}
+            {collab.shared && item('Change my name…', collab.onRename)}
+            {item('Export image or PDF…  (Ctrl+Shift+E)', p.onExport)}
             {item('Save to file…', p.onSave)}
             {item('Open file…', p.onOpen)}
             {item('Clear board', p.onClear, true)}

@@ -37,9 +37,20 @@ export type ShapeKind =
   | 'document'
   | 'text'
 
-export type DashStyle = 'solid' | 'dashed' | 'dotted'
-export type Cap = 'none' | 'arrow' | 'triangle' | 'circle' | 'diamond'
-export type Routing = 'straight' | 'elbow'
+/** 'double' (two parallel rails) applies to lines; shapes draw it as solid. */
+export type DashStyle = 'solid' | 'dashed' | 'dotted' | 'double'
+export type Cap =
+  | 'none'
+  | 'arrow'
+  | 'triangle'
+  | 'triangle-open'
+  | 'circle'
+  | 'circle-open'
+  | 'diamond'
+  | 'diamond-open'
+  | 'bar'
+/** 'curved-elbow' follows the same right-angle route as 'elbow', drawn with rounded corners. */
+export type Routing = 'straight' | 'elbow' | 'curved-elbow'
 
 interface Labeled {
   id: string
@@ -120,8 +131,8 @@ export interface StyleDefaults {
   fontSize: number
 }
 
-export interface LinePreset {
-  name: string
+/** How the Line tool draws: the options shown at the bottom of the palette. */
+export interface LineStyle {
   dash: DashStyle
   startCap: Cap
   endCap: Cap

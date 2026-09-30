@@ -4,7 +4,8 @@ React 19 + TypeScript + Vite whiteboard. SVG rendering, pointer events (mouse, t
 
 ## Commands
 
-- `npm run dev` — dev server on http://localhost:5173
+- `npm run dev` — dev server on http://localhost:5173, including the collaboration WebSocket (`/ws`)
+- `npm run build && npm start` — production: one Node process serves `dist/` and `/ws` (env `PORT`, default 8787; `DATA_DIR`, default `data/boards`)
 - `npm run verify` — typecheck + unit tests + production build; run before calling work done
 - `npm test` — vitest unit tests only (`src/*.test.ts`)
 
@@ -16,7 +17,13 @@ React 19 + TypeScript + Vite whiteboard. SVG rendering, pointer events (mouse, t
 - `src/curveEdit.ts` — point editing for curves: flat points ⇄ nodes (anchor + in/out handles), move with handle mirroring, smooth/corner toggle, delete, shape-preserving split
 - `src/transform.ts` — rotate/scale/flip for any selection. Shapes store `rotation`/`flipX`/`flipY` (outline flips, label never mirrors); point-based elements have their points transformed. Stroke widths don't scale.
 - `src/ops.ts` — pure element operations (move, delete, clone, z-order); keep these side-effect free and tested
-- `src/useBoard.ts` — element store + undo/redo. State lives in a ref; call `checkpoint()` before a change you want undoable (or `change()`)
+- `src/boardStore.ts` (+ `useBoard.ts` hook) — element store + per-user undo/redo. Call `checkpoint()` before a change you want undoable (or `change()`). Undo reverts only the properties this user changed, so it never clobbers collaborators.
+- `src/patch.ts` — `Patch` (upserts/deletes/order): the unit of change for both sync and undo
+- `src/sync.ts` — client sync: view = server-confirmed state + own unacknowledged ops; the server echoes every op to everyone in one order, so clients converge
+- `server/boards.ts` — WebSocket rooms (`/ws?board=<id>`), sanitizes input, persists to `data/boards/<id>.json`; `server/index.ts` is the production entry; `vite.config.ts` mounts the same rooms in dev
+- `src/exporters.ts` — PNG/PDF/SVG export. Clones the on-screen content layer, swaps HTML (`foreignObject`) labels for wrapped SVG `<text>`, drops click-target paths; PNG rasterizes that SVG, PDF uses `jspdf` + `svg2pdf.js` (lazy-loaded) with Helvetica. Pure layout math is in `src/exportLayout.ts`.
+- `src/protocol.ts` — wire messages shared by client and server
+- Routing: `/` = private board in localStorage; `/board/<id>` = shared board
 - `src/components/Canvas.tsx` — all pointer interaction (gesture state machine), selection overlay, context menu and label editor placement
 - `src/storage.ts` — localStorage load/save and validation of untrusted board data
 
@@ -25,6 +32,9 @@ React 19 + TypeScript + Vite whiteboard. SVG rendering, pointer events (mouse, t
 - Shape geometry (hit tests, connector attachment, resize) must go through `toLocal`/`fromLocal` in `geometry.ts` so rotated shapes work.
 - To test in the browser without touching the user's board, use the `whiteboard-test` launch config (port 5174 = separate localStorage).
 - Don't rewrite source files with PowerShell `Get-Content`/`Set-Content`: it reads with the ANSI code page and mangles non-ASCII (°, ×, ⌘).
+- Gestures that compute from a start-of-gesture snapshot must merge only the ids they touch into the live board (`mergeFrom` in Canvas), or they'd wipe out concurrent remote changes.
+- Files imported by `vite.config.ts` (server/boards.ts and its src/ imports) use explicit `.ts` import extensions; keep that chain extension-complete. Changes to server code need a dev-server restart.
+- React StrictMode mounts effects twice in dev, so the app opens and immediately closes an extra WebSocket; the server must tolerate sockets that close before saying hello.
 - World vs screen coordinates: `screen = world * zoom + (viewport.x, viewport.y)`. Elements are stored in world coordinates.
 - Lines bound to shapes are resolved at render time via `linePoints`; `start`/`end` are only authoritative for unbound ends. When deleting or copying, use `removeElements` / `bakeLines` so bound ends keep their positions.
 - The canvas `preventDefault`s `mousedown` so it never steals focus; otherwise a label editor opened on pointerdown is blurred immediately.
