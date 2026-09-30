@@ -36,7 +36,8 @@ React 19 + TypeScript + Vite whiteboard. SVG rendering, pointer events (mouse, t
 - Files imported by `vite.config.ts` (server/boards.ts and its src/ imports) use explicit `.ts` import extensions; keep that chain extension-complete. Changes to server code need a dev-server restart.
 - React StrictMode mounts effects twice in dev, so the app opens and immediately closes an extra WebSocket; the server must tolerate sockets that close before saying hello.
 - World vs screen coordinates: `screen = world * zoom + (viewport.x, viewport.y)`. Elements are stored in world coordinates.
-- Lines bound to shapes are resolved at render time via `linePoints`; `start`/`end` are only authoritative for unbound ends. When deleting or copying, use `removeElements` / `bakeLines` so bound ends keep their positions.
+- Lines bound to shapes are resolved at render time via `linePoints`; `start`/`end` are only authoritative for unbound ends. Bindings survive moving/rotating/scaling the line itself (the attachment slides along the outline); only dragging an end off a shape, deleting the shape, or copying the line alone removes them. When deleting or copying, use `removeElements` / `bakeLines` so bound ends keep their positions.
+- Attachment points use the real outline (`boundaryPoint`: ellipse/diamond analytically, triangle/parallelogram/hexagon via `outlinePolygon`, others the box). New polygonal shapes need an `outlinePolygon` entry.
 - The canvas `preventDefault`s `mousedown` so it never steals focus; otherwise a label editor opened on pointerdown is blurred immediately.
 - Don't put `//` comments between JSX attributes — the Vite 8 transform silently drops the following prop. Put comments above the element.
 - Labels render in `foreignObject` with inline styles so SVG export stays self-contained.

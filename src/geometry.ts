@@ -181,6 +181,11 @@ function boundaryPointLocal(shape: ShapeElement, toward: Point): Point {
   if (dx === 0 && dy === 0) return c
   const rx = Math.max(shape.w / 2, 0.5)
   const ry = Math.max(shape.h / 2, 0.5)
+  const polygon = outlinePolygon(shape)
+  if (polygon) {
+    const t = rayExit(c, { x: dx, y: dy }, polygon)
+    if (t !== null) return { x: c.x + dx * t, y: c.y + dy * t }
+  }
   let t: number
   switch (shape.kind) {
     case 'circle':
@@ -196,12 +201,83 @@ function boundaryPointLocal(shape: ShapeElement, toward: Point): Point {
   return { x: c.x + dx * t, y: c.y + dy * t }
 }
 
-/** Midpoint of the side facing `toward`, used by elbow connectors. */
+/**
+ * Outline corners of polygonal shapes in the shape's unrotated frame (matching
+ * `shapePath`), with flips applied. Null for shapes whose outline is handled
+ * analytically (ellipses, diamond) or approximated by the box.
+ */
+function outlinePolygon(shape: ShapeElement): Point[] | null {
+  const { w, h } = shape
+  let pts: [number, number][]
+  switch (shape.kind) {
+    case 'triangle':
+      pts = [
+        [w / 2, 0],
+        [w, h],
+        [0, h],
+      ]
+      break
+    case 'parallelogram': {
+      const o = Math.min(w * 0.2, h)
+      pts = [
+        [o, 0],
+        [w, 0],
+        [w - o, h],
+        [0, h],
+      ]
+      break
+    }
+    case 'hexagon': {
+      const o = Math.min(w * 0.25, h / 2)
+      pts = [
+        [o, 0],
+        [w - o, 0],
+        [w, h / 2],
+        [w - o, h],
+        [o, h],
+        [0, h / 2],
+      ]
+      break
+    }
+    default:
+      return null
+  }
+  return pts.map(([x, y]) => ({
+    x: shape.x + (shape.flipX ? w - x : x),
+    y: shape.y + (shape.flipY ? h - y : y),
+  }))
+}
+
+/** Smallest t > 0 where the ray origin + t·dir crosses the polygon's edges (null if it doesn't). */
+function rayExit(origin: Point, dir: Point, polygon: Point[]): number | null {
+  const cross = (a: Point, b: Point) => a.x * b.y - a.y * b.x
+  let best: number | null = null
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i]
+    const b = polygon[(i + 1) % polygon.length]
+    const edge = { x: b.x - a.x, y: b.y - a.y }
+    const denom = cross(dir, edge)
+    if (Math.abs(denom) < 1e-12) continue // parallel
+    const ao = { x: a.x - origin.x, y: a.y - origin.y }
+    const t = cross(ao, edge) / denom
+    const u = cross(ao, dir) / denom
+    if (t > 1e-9 && u >= -1e-9 && u <= 1 + 1e-9 && (best === null || t < best)) best = t
+  }
+  return best
+}
+
+/**
+ * Where an elbow connector leaves a shape: straight out from the center toward
+ * the side facing `toward`, stopping at the real outline (so a triangle's
+ * slanted side or a hexagon's point, not the bounding box).
+ */
 function sideAnchor(shape: ShapeElement, toward: Point, horizontal: boolean): Point {
   const c = center(shape)
   const t = toLocal(shape, toward)
-  if (horizontal) return fromLocal(shape, { x: t.x >= c.x ? shape.x + shape.w : shape.x, y: c.y })
-  return fromLocal(shape, { x: c.x, y: t.y >= c.y ? shape.y + shape.h : shape.y })
+  const side = horizontal
+    ? { x: t.x >= c.x ? shape.x + shape.w : shape.x, y: c.y }
+    : { x: c.x, y: t.y >= c.y ? shape.y + shape.h : shape.y }
+  return fromLocal(shape, boundaryPointLocal(shape, side))
 }
 
 /** Resize a rect by dragging one of its 8 handles (n, ne, e, se, s, sw, w, nw). */

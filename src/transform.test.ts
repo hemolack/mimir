@@ -99,7 +99,19 @@ describe('rotateElements', () => {
     const both = only<LineElement>(rotateElements([a, b, l], new Set(['a', 'b', 'l']), { x: 0, y: 0 }, 1), 'l')
     expect([both.startBinding, both.endBinding]).toEqual(['a', 'b'])
     const one = only<LineElement>(rotateElements([a, b, l], new Set(['a', 'l']), { x: 0, y: 0 }, 1), 'l')
-    expect([one.startBinding, one.endBinding]).toEqual(['a', null])
+    expect([one.startBinding, one.endBinding]).toEqual(['a', 'b'])
+    const alone = only<LineElement>(rotateElements([a, b, l], new Set(['l']), { x: 0, y: 0 }, 1), 'l')
+    expect([alone.startBinding, alone.endBinding]).toEqual(['a', 'b'])
+  })
+
+  it('keeps an attached end on its shape when only the line is scaled', () => {
+    const a = shape('a')
+    const l = line('l', { startBinding: 'a', end: { x: 300, y: 25 } })
+    const scaled = only<LineElement>(scaleElements([a, l], new Set(['l']), { x: 0, y: 0 }, 2, 2), 'l')
+    expect(scaled.startBinding).toBe('a')
+    expect(scaled.end).toEqual({ x: 600, y: 50 }) // free end scaled
+    const pts = linePoints(scaled, toMap([a, scaled]))
+    expect(pts[0].x).toBeCloseTo(100) // still on a's right edge
   })
 })
 

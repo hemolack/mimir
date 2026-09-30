@@ -37,15 +37,10 @@ function mapElements(
       case 'curve':
         return { ...el, points: el.points.map(mapPoint) }
       case 'line': {
-        // Like moving: an end stays attached only if its shape is transformed too.
+        // Like moving: ends stay attached to their shapes (the attachment point
+        // slides along the perimeter); only free ends follow the transform.
         const pts = linePoints(el, map)
-        return {
-          ...el,
-          start: mapPoint(pts[0]),
-          end: mapPoint(pts[pts.length - 1]),
-          startBinding: el.startBinding && ids.has(el.startBinding) ? el.startBinding : null,
-          endBinding: el.endBinding && ids.has(el.endBinding) ? el.endBinding : null,
-        }
+        return { ...el, start: mapPoint(pts[0]), end: mapPoint(pts[pts.length - 1]) }
       }
     }
   })

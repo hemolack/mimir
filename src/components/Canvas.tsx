@@ -156,6 +156,8 @@ const handleCursor = (handle: string, rotation: number) => {
   return `${COMPASS_CURSORS[i]}-resize`
 }
 const DOUBLE_TAP_MS = 350
+/** A line end attaches to a shape when dropped within this many screen pixels of it. */
+const SNAP_PX = 12
 
 /** Stop mousedown from moving focus, which would instantly blur a label editor opened on pointerdown. */
 const preventFocusSteal = (e: React.MouseEvent) => e.preventDefault()
@@ -476,7 +478,7 @@ export function Canvas(props: CanvasProps) {
       case 'line': {
         const s = props.style
         const lp = props.lineStyle
-        const startShape = shapeAt(wp, board.get(), null)
+        const startShape = shapeAt(wp, board.get(), null, SNAP_PX / vpRef.current.zoom)
         const el: LineElement = {
           id: newId(),
           type: 'line',
@@ -628,7 +630,10 @@ export function Canvas(props: CanvasProps) {
         break
       }
       case 'create-line': {
-        const target = shapeAt(wp, board.get(), g.id)
+        const hit = shapeAt(wp, board.get(), g.id, SNAP_PX / vpRef.current.zoom)
+        const line = board.get().find((x) => x.id === g.id)
+        // Never attach both ends to the same shape (the line would have no length).
+        const target = hit && line?.type === 'line' && hit.id === line.startBinding ? null : hit
         const end = e.shiftKey && !target ? snapAngle(g.origin, wp) : wp
         setBindTarget(target?.id ?? null)
         updateEl<LineElement>(g.id, (l) => ({ ...l, end, endBinding: target?.id ?? null }))
@@ -703,7 +708,8 @@ export function Canvas(props: CanvasProps) {
         break
       }
       case 'line-end': {
-        const target = shapeAt(wp, board.get(), g.id)
+        // Dropping an end on or near a shape attaches it; dragging it clear detaches it.
+        const target = shapeAt(wp, board.get(), g.id, SNAP_PX / vpRef.current.zoom)
         setBindTarget(target?.id ?? null)
         const binding = target?.id ?? null
         updateEl<LineElement>(g.id, (l) =>

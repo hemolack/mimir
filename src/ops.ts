@@ -12,8 +12,10 @@ export const isLabelable = (el: BoardElement | undefined): boolean =>
   el?.type === 'shape' || el?.type === 'line'
 
 /**
- * Move elements by (dx, dy). A moved line keeps a binding only if the shape it
- * is bound to moves with it; otherwise that end detaches at its current spot.
+ * Move elements by (dx, dy). Lines stay attached to their shapes even when the
+ * shapes don't move: a bound end slides around the shape's perimeter to face
+ * the line's new direction. (Dragging an end off a shape is how to detach it.)
+ * Stored endpoints move too, as the fallback if a binding is later removed.
  */
 export function translateElements(
   elements: BoardElement[],
@@ -35,13 +37,7 @@ export function translateElements(
         const pts = linePoints(el, map)
         const s = pts[0]
         const e = pts[pts.length - 1]
-        return {
-          ...el,
-          start: { x: s.x + dx, y: s.y + dy },
-          end: { x: e.x + dx, y: e.y + dy },
-          startBinding: el.startBinding && ids.has(el.startBinding) ? el.startBinding : null,
-          endBinding: el.endBinding && ids.has(el.endBinding) ? el.endBinding : null,
-        }
+        return { ...el, start: { x: s.x + dx, y: s.y + dy }, end: { x: e.x + dx, y: e.y + dy } }
       }
     }
   })
