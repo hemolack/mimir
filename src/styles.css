@@ -1,0 +1,501 @@
+:root {
+  --bg: #f8f9fa;
+  --panel: #ffffff;
+  --border: #e3e6ea;
+  --text: #1e1e1e;
+  --muted: #6b7280;
+  --accent: #4f46e5;
+  --accent-soft: #e8e7fd;
+  --danger: #d9363e;
+  --grid: #d3d7dc;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 16px rgb(0 0 0 / 0.08);
+  color-scheme: light;
+  font-family: ui-rounded, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  overscroll-behavior: none;
+}
+
+.app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* ---------- Canvas ---------- */
+
+.canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+.board {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  background: var(--bg);
+}
+
+.grid-dot {
+  fill: var(--grid);
+}
+
+.selection-box {
+  fill: none;
+  stroke: var(--accent);
+}
+
+.handle {
+  fill: #ffffff;
+  stroke: var(--accent);
+}
+
+.handle.control {
+  fill: var(--accent);
+  stroke: #ffffff;
+}
+
+.handle.anchor.active {
+  fill: var(--accent);
+}
+
+.handle-arm {
+  stroke: var(--accent);
+  opacity: 0.7;
+}
+
+.pivot {
+  fill: #ffffff;
+  stroke: var(--accent);
+}
+
+.pivot-cross {
+  stroke: var(--accent);
+}
+
+.transform-hud {
+  position: absolute;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #1e1e1e;
+  color: #fff;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.marquee {
+  fill: rgb(79 70 229 / 0.08);
+  stroke: var(--accent);
+}
+
+.bind-target {
+  fill: rgb(79 70 229 / 0.06);
+  stroke: var(--accent);
+}
+
+/* ---------- Panels & buttons ---------- */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tool-btn.small {
+  width: 34px;
+  height: 34px;
+}
+
+.tool-btn.text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tool-btn:hover:not(:disabled) {
+  background: #f1f3f5;
+}
+
+.tool-btn.active,
+.tool-btn.active:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tool-btn.danger:hover {
+  color: var(--danger);
+  background: #fdecec;
+}
+
+.tool-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tool-btn:focus-visible,
+.swatch:focus-visible,
+.menu-item:focus-visible,
+.zoom-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 28px);
+  gap: 6px;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.swatch.active {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent);
+}
+
+.swatch.none,
+.color-chip.none {
+  background: linear-gradient(135deg, transparent 45%, var(--danger) 45%, var(--danger) 55%, transparent 55%), #fff;
+}
+
+.color-chip {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid;
+}
+
+.color-chip.filled {
+  border: 1px solid rgb(0 0 0 / 0.2);
+}
+
+.dot {
+  display: block;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.bar {
+  display: block;
+  width: 20px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+/* ---------- Palette ---------- */
+
+.palette-wrap {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-height: calc(100% - 24px);
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.palette-group {
+  display: grid;
+  grid-template-columns: repeat(2, 40px);
+  gap: 2px;
+}
+
+.palette-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.pen-panel {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 150px;
+}
+
+/* ---------- Top bar ---------- */
+
+.topbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.topbar .panel {
+  padding: 4px;
+}
+
+.zoom-label {
+  min-width: 52px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.zoom-label:hover {
+  background: #f1f3f5;
+}
+
+.menu-anchor {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 190px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.menu-item {
+  text-align: left;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: #f1f3f5;
+}
+
+.menu-item.danger {
+  color: var(--danger);
+}
+
+/* ---------- Context menu ---------- */
+
+.context-menu {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  padding: 4px;
+  z-index: 5;
+  max-width: calc(100% - 16px);
+}
+
+.context-menu > .row {
+  flex-wrap: wrap;
+}
+
+.menu-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.popover {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding: 8px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.popover .swatches {
+  grid-template-columns: repeat(auto-fill, 28px);
+  max-width: 300px;
+}
+
+.popover-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.popover-label {
+  width: 44px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------- Label editor ---------- */
+
+.label-editor {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.label-editor textarea {
+  pointer-events: auto;
+  width: 100%;
+  min-width: 60px;
+  resize: none;
+  overflow: hidden;
+  padding: 4px;
+  border: 1.5px solid var(--accent);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.9);
+  text-align: center;
+  line-height: 1.25;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ---------- Hint & toast ---------- */
+
+.hint {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.toast {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #1e1e1e;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+/* ---------- Small screens: palette becomes a bottom bar ---------- */
+
+@media (max-width: 720px) {
+  .palette-wrap {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 8px;
+    transform: none;
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .palette {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-height: none;
+  }
+
+  .palette-group {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  .palette-sep {
+    width: 1px;
+    height: auto;
+    margin: 4px 6px;
+  }
+
+  .pen-panel {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .pen-panel .swatches {
+    grid-template-columns: repeat(8, 28px);
+  }
+
+  .topbar {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    justify-content: flex-end;
+  }
+
+  .hint {
+    display: none;
+  }
+
+  .toast {
+    bottom: 80px;
+  }
+}
