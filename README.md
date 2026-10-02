@@ -1,4 +1,4 @@
-# Whiteboard
+# Mimir
 
 A collaborative whiteboard built with React, TypeScript and Vite: shapes, connectors, freehand and Bézier drawing, live multi-user boards, light/dark themes, and PNG/PDF/SVG export.
 
