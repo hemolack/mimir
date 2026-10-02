@@ -9,6 +9,9 @@ dist-ssr/
 # Shared boards saved by the collaboration server
 data/
 
+# Deployment packages (see README: Deploy to Azure)
+app.zip
+
 # Vite / Vitest caches
 .vite/
 node_modules/.vite/

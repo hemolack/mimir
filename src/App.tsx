@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Canvas } from './components/Canvas'
 import type { ActiveNode, Editing, SelectionActions } from './components/Canvas'
 import { deleteNodeFromBoard, nodeCount } from './curveEdit'
 import { Palette } from './components/Palette'
 import { TopBar } from './components/TopBar'
 import { MAX_ZOOM, MIN_ZOOM, SHAPES } from './constants'
+import { ConfirmDialog, TextDialog } from './components/Dialogs'
 import { ExportDialog } from './components/ExportDialog'
 import type { ExportChoice } from './components/ExportDialog'
-import { contentBounds, exportBoard, pickFile, pngSize, saveBoardFile } from './exporters'
+import { contentBounds, deliverExport, pickFile, pngSize, prepareExport, saveBoardFile } from './exporters'
+import type { PreparedExport } from './exporters'
+import { CANVAS, paintFor, ThemeContext, useSystemDark } from './theme'
+import { lineToolOptions, selectionOptions } from './components/optionItems'
+import type { OptionPanel } from './components/optionItems'
+import type { Theme, ThemeSetting } from './theme'
 import {
   bakeLines,
   bringToFront,
@@ -24,7 +31,7 @@ import { loadBoard, loadSettings, parseBoardFile, sanitizeElements, saveBoard, s
 import { SyncClient } from './sync'
 import type { SyncStatus } from './sync'
 import { rotateElements, scaleElements } from './transform'
-import type { BoardElement, LineElement, LineStyle, PenSettings, Point, ShapeKind, Tool, Viewport } from './types'
+import type { BoardElement, LineStyle, PenSettings, Point, ShapeKind, Tool, Viewport } from './types'
 import { useBoard } from './useBoard'
 
 const HINTS: Record<Tool, string> = {
@@ -65,6 +72,12 @@ export default function App() {
   const [tool, setToolState] = useState<Tool>('select')
   const [shapeKind, setShapeKind] = useState<ShapeKind>('rectangle')
   const [lineStyle, setLineStyle] = useState<LineStyle>(settings.line)
+  // ----- Theme -----
+  const [themeSetting, setThemeSetting] = useState<ThemeSetting>(settings.theme)
+  const systemDark = useSystemDark()
+  const theme: Theme = themeSetting === 'system' ? (systemDark ? 'dark' : 'light') : themeSetting
+  /** Temporarily overrides the rendered theme while an export snapshots the board. */
+  const [renderTheme, setRenderTheme] = useState<Theme | null>(null)
   const [pen, setPen] = useState(settings.pen)
   const [style, setStyle] = useState(settings.style)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -72,6 +85,8 @@ export default function App() {
   const [activeNode, setActiveNode] = useState<ActiveNode | null>(null)
   const [spaceHeld, setSpaceHeld] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  /** Which in-app dialog is open (the browser's prompt/confirm aren't reliable everywhere). */
+  const [dialog, setDialog] = useState<'rename' | 'link' | 'clear' | null>(null)
   const clipboard = useRef<BoardElement[]>([])
   const svgRef = useRef<SVGSVGElement>(null)
 
@@ -82,16 +97,6 @@ export default function App() {
     return selectedIds.filter((id) => ids.has(id))
   }, [elements, selectedIds])
   const selSet = new Set(selection)
-  // Selected lines, if any: the palette's line options then edit these instead of the tool.
-  const selectedLines = elements.filter((el): el is LineElement => el.type === 'line' && selSet.has(el.id))
-  const shownLineStyle: LineStyle = selectedLines.length
-    ? {
-        dash: selectedLines[0].dash,
-        startCap: selectedLines[0].startCap,
-        endCap: selectedLines[0].endCap,
-        routing: selectedLines[0].routing,
-      }
-    : lineStyle
   const soleCurve = (() => {
     if (selection.length !== 1) return null
     const el = elements.find((e) => e.id === selection[0])
@@ -168,34 +173,27 @@ export default function App() {
       await navigator.clipboard.writeText(location.href)
       showToast('Link copied — anyone with it can view and edit this board')
     } catch {
-      window.prompt('Copy this link to share the board:', location.href)
+      // Clipboard access can be refused; show the link for copying by hand.
+      setDialog('link')
     }
   }
 
-  const rename = () => {
-    const name = window.prompt('Your name, as others see it:', me.name)?.trim()
-    if (!name) return
+  const rename = () => setDialog('rename')
+
+  const applyName = (name: string) => {
     const next = { ...me, name: name.slice(0, 40) }
     saveIdentity(next)
     setMe(next)
+    setDialog(null)
   }
 
-  useEffect(() => saveSettings({ pen, style, line: lineStyle }), [pen, style, lineStyle])
+  useEffect(() => saveSettings({ pen, style, line: lineStyle, theme: themeSetting }), [pen, style, lineStyle, themeSetting])
 
-  /**
-   * A line option was picked in the palette. With lines selected it restyles
-   * them (and becomes the tool's default too); otherwise it sets up the Line
-   * tool and switches to it, ready to draw.
-   */
-  const changeLineStyle = (patch: Partial<LineStyle>) => {
-    setLineStyle((s) => ({ ...s, ...patch }))
-    if (selectedLines.length) {
-      const ids = new Set(selectedLines.map((l) => l.id))
-      board.change((els) => els.map((el) => (el.type === 'line' && ids.has(el.id) ? { ...el, ...patch } : el)))
-    } else {
-      setTool('line')
-    }
-  }
+  // The UI chrome follows `data-theme` via CSS variables; the board uses ThemeContext.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', CANVAS[theme])
+  }, [theme])
 
   useEffect(() => {
     if (!toast) return
@@ -259,7 +257,8 @@ export default function App() {
   const [exportChoice, setExportChoice] = useState<ExportChoice>({
     format: 'png',
     selectionOnly: false,
-    background: 'white',
+    theme: 'light',
+    background: 'solid',
     scale: 2,
     page: 'fit',
   })
@@ -276,9 +275,22 @@ export default function App() {
   const runExport = async (choice: ExportChoice) => {
     setExportChoice(choice)
     const ids = choice.selectionOnly && selection.length ? new Set(selection) : null
-    const ok = svgRef.current && (await exportBoard(svgRef.current, board.get(), { ...choice, ids, boardId }))
+    const opts = { ...choice, ids, boardId }
+    let prepared: PreparedExport | null = null
+    if (svgRef.current) {
+      // Export is built from the rendered board, so render it in the export's
+      // theme just long enough to snapshot it. Both switches happen in this one
+      // task, so the browser never paints the intermediate state.
+      flushSync(() => setRenderTheme(choice.theme))
+      try {
+        prepared = prepareExport(svgRef.current, board.get(), opts)
+      } finally {
+        flushSync(() => setRenderTheme(null))
+      }
+    }
+    if (prepared) await deliverExport(prepared, opts)
     setExportOpen(false)
-    if (!ok) showToast('Nothing to export yet')
+    if (!prepared) showToast('Nothing to export yet')
   }
 
   const copy = () => {
@@ -336,7 +348,7 @@ export default function App() {
       const target = e.target
       if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return
       // A label being edited or a dialog owns the keyboard.
-      if (editing || exportOpen) return
+      if (editing || exportOpen || dialog) return
       const mod = e.ctrlKey || e.metaKey
       const key = e.key
 
@@ -467,7 +479,27 @@ export default function App() {
     }
   })
 
+  // ----- Palette options area -----
+  // Line tool → how new lines are drawn; anything selected (with a selecting
+  // tool) → options that restyle the selection; otherwise nothing.
+  const selectingTool = tool === 'select' || tool === 'move' || tool === 'scale' || tool === 'rotate'
+  const selectedEls = elements.filter((el) => selSet.has(el.id))
+  const optionPanel: OptionPanel | null =
+    tool === 'line'
+      ? { caption: 'Line', editing: false, items: lineToolOptions(lineStyle, (patch) => setLineStyle((s) => ({ ...s, ...patch }))) }
+      : selectingTool && selectedEls.length
+        ? {
+            caption: 'Selected',
+            editing: true,
+            items: selectionOptions(selectedEls, paintFor(theme), {
+              patch: actions.patch,
+              lineDefaults: (patch) => setLineStyle((s) => ({ ...s, ...patch })),
+            }),
+          }
+        : null
+
   return (
+    <ThemeContext.Provider value={renderTheme ?? theme}>
     <div className="app">
       <Canvas
         board={board}
@@ -495,9 +527,7 @@ export default function App() {
         tool={tool}
         shapeKind={shapeKind}
         pen={pen}
-        lineStyle={shownLineStyle}
-        editingSelectedLines={selectedLines.length > 0}
-        onLineStyle={changeLineStyle}
+        panel={optionPanel}
         onTool={setTool}
         onShape={(kind) => {
           setShapeKind(kind)
@@ -516,6 +546,9 @@ export default function App() {
         onZoomReset={() => zoomBy(1 / viewport.zoom)}
         onZoomFit={() => zoomFit()}
         onExport={openExport}
+        theme={theme}
+        themeSetting={themeSetting}
+        onThemeSetting={setThemeSetting}
         collab={{
           shared: !!boardId,
           status,
@@ -529,10 +562,7 @@ export default function App() {
         onSave={() => saveBoardFile(board.get())}
         onOpen={openFile}
         onClear={() => {
-          if (board.get().length && window.confirm('Clear the whole board? You can undo this.')) {
-            board.change(() => [])
-            setSelectedIds([])
-          }
+          if (board.get().length) setDialog('clear')
         }}
       />
       <div className="hint" aria-live="polite">
@@ -547,11 +577,53 @@ export default function App() {
           onClose={() => setExportOpen(false)}
         />
       )}
+      {dialog === 'rename' && (
+        <TextDialog
+          title="Your name"
+          label="Shown to others"
+          initial={me.name}
+          submitLabel="Save"
+          maxLength={40}
+          onSubmit={applyName}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === 'link' && (
+        <TextDialog
+          title="Share this board"
+          label="Link"
+          initial={location.href}
+          submitLabel="Done"
+          readOnly
+          note="Copy the link (Ctrl+C) and send it. Anyone with it can view and edit this board."
+          onSubmit={() => setDialog(null)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === 'clear' && (
+        <ConfirmDialog
+          title="Clear board?"
+          message={
+            boardId
+              ? 'This removes everything for everyone on this board. You can undo it.'
+              : 'This removes everything on the board. You can undo it.'
+          }
+          confirmLabel="Clear board"
+          danger
+          onConfirm={() => {
+            board.change(() => [])
+            setSelectedIds([])
+            setDialog(null)
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           {toast}
         </div>
       )}
     </div>
+    </ThemeContext.Provider>
   )
 }

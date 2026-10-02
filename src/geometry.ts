@@ -539,7 +539,8 @@ export function trimPolyline(points: Point[], start: number, end: number): Point
 }
 
 /** Resolve a cap's fill kind to a paint value. */
-export const capFillColor = (fill: CapFill, stroke: string) => (fill === 'stroke' ? stroke : fill === 'paper' ? PAPER : 'none')
+export const capFillColor = (fill: CapFill, stroke: string, paper = PAPER) =>
+  fill === 'stroke' ? stroke : fill === 'paper' ? paper : 'none'
 
 /**
  * The polyline shifted sideways by `offset` (positive = left of travel), with

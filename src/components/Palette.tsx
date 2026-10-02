@@ -1,39 +1,37 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { COLOR_NAMES, LINE_CAPS, LINE_DASHES, LINE_ROUTES, PEN_SIZES, SHAPES, STROKE_COLORS } from '../constants'
-import type { LineStyle, PenSettings, ShapeKind, Tool } from '../types'
+import { COLOR_NAMES, PEN_SIZES, SHAPES, STROKE_COLORS } from '../constants'
+import { colorName, usePaint } from '../theme'
+import type { PenSettings, ShapeKind, Tool } from '../types'
 import {
-  CapIcon,
   CurveIcon,
   EraserIcon,
   HandIcon,
-  LineIcon,
   LineToolIcon,
   MoveIcon,
   PenIcon,
   RotateIcon,
-  RouteIcon,
   ScaleIcon,
   SelectIcon,
   ShapeIcon,
   TextIcon,
 } from './icons'
+import type { OptionPanel, PickOption } from './optionItems'
 
 interface PaletteProps {
   tool: Tool
   shapeKind: ShapeKind
   pen: PenSettings
-  /** What the line options show: the selected lines' style, or the Line tool's. */
-  lineStyle: LineStyle
-  /** True when the line options are editing selected lines rather than the tool. */
-  editingSelectedLines: boolean
+  /**
+   * Options for the current tool or selection (Line tool, or whatever is
+   * selected), shown at the bottom of the palette; null/absent shows none.
+   * The Brush and Curve tools show their own brush settings instead.
+   */
+  panel?: OptionPanel | null
   onTool(tool: Tool): void
   onShape(kind: ShapeKind): void
   onPen(patch: Partial<PenSettings>): void
-  onLineStyle(patch: Partial<LineStyle>): void
 }
-
-type LineOption = 'dash' | 'startCap' | 'endCap' | 'routing'
 
 function ToolButton(props: { active: boolean; title: string; onClick(): void; children: ReactNode }) {
   return (
@@ -50,54 +48,30 @@ function ToolButton(props: { active: boolean; title: string; onClick(): void; ch
   )
 }
 
-const OPTION_TITLES: Record<LineOption, string> = {
-  dash: 'Line style',
-  startCap: 'Start',
-  endCap: 'End',
-  routing: 'Route',
-}
-
-/** Icon for one value of one line option. */
-function optionIcon(option: LineOption, value: string) {
-  switch (option) {
-    case 'dash':
-      return <LineIcon style={{ dash: value as LineStyle['dash'] }} />
-    case 'startCap':
-      return <CapIcon cap={value as LineStyle['startCap']} flip />
-    case 'endCap':
-      return <CapIcon cap={value as LineStyle['endCap']} />
-    case 'routing':
-      return <RouteIcon routing={value as LineStyle['routing']} />
-  }
-}
-
-const CHOICES: Record<LineOption, { value: string; name: string }[]> = {
-  dash: LINE_DASHES,
-  startCap: LINE_CAPS,
-  endCap: LINE_CAPS,
-  routing: LINE_ROUTES,
-}
-
 export function Palette(p: PaletteProps) {
-  const [open, setOpen] = useState<LineOption | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const paint = usePaint()
 
-  // Close the flyout when clicking anywhere else.
+  const brushTool = p.tool === 'pen' || p.tool === 'curve'
+  const panel = brushTool ? null : (p.panel ?? null)
+  const items = panel?.items ?? []
+  const open = items.find((i): i is PickOption => i.kind === 'pick' && i.id === openId) ?? null
+
+  // Close the flyout when clicking anywhere else, or when its option goes away.
   useEffect(() => {
-    if (!open) return
+    if (!openId) return
     const close = (e: PointerEvent) => {
-      if (!(e.target instanceof Element && e.target.closest('.line-options, .line-flyout'))) setOpen(null)
+      if (!(e.target instanceof Element && e.target.closest('.tool-options, .line-flyout'))) setOpenId(null)
     }
     window.addEventListener('pointerdown', close)
     return () => window.removeEventListener('pointerdown', close)
-  }, [open])
-
-  const brushTool = p.tool === 'pen' || p.tool === 'curve'
-  // The line flyout belongs to the line options; drop it when brush options take the area.
+  }, [openId])
   useEffect(() => {
-    if (brushTool) setOpen(null)
-  }, [brushTool])
+    if (openId && !open) setOpenId(null)
+  }, [openId, open])
 
-  const nameOf = (option: LineOption) => CHOICES[option].find((c) => c.value === p.lineStyle[option])?.name ?? ''
+  // Values set elsewhere (or on older boards) may not be one of the presets; show the number then.
+  const nameOf = (item: PickOption) => item.choices.find((c) => c.value === item.value)?.name ?? String(item.value)
 
   return (
     <div className="palette-wrap">
@@ -149,9 +123,9 @@ export function Palette(p: PaletteProps) {
           ))}
         </div>
 
-        <div className="palette-sep" />
-        {/* Tool options: brush settings while drawing freehand, line options otherwise. */}
-        {brushTool ? (
+        {(brushTool || items.length > 0) && <div className="palette-sep" />}
+
+        {brushTool && (
           <div className="tool-options brush-options" role="group" aria-label={p.tool === 'pen' ? 'Brush options' : 'Curve options'}>
             <span className="palette-caption">{p.tool === 'pen' ? 'Brush' : 'Curve'}</span>
             <div className="mini-swatches" role="radiogroup" aria-label="Color">
@@ -162,9 +136,9 @@ export function Palette(p: PaletteProps) {
                   role="radio"
                   aria-checked={p.pen.color === c}
                   className={`mini-swatch${p.pen.color === c ? ' active' : ''}`}
-                  style={{ background: c }}
-                  title={COLOR_NAMES[c] ?? c}
-                  aria-label={COLOR_NAMES[c] ?? c}
+                  style={{ background: paint.ink(c) }}
+                  title={colorName(COLOR_NAMES, c, paint.theme)}
+                  aria-label={colorName(COLOR_NAMES, c, paint.theme)}
                   onClick={() => p.onPen({ color: c })}
                 />
               ))}
@@ -196,51 +170,67 @@ export function Palette(p: PaletteProps) {
               </button>
             )}
           </div>
-        ) : (
+        )}
+
+        {panel && items.length > 0 && (
           <div
-            className={`tool-options line-options${p.editingSelectedLines ? ' editing' : ''}`}
+            className={`tool-options line-options${panel.editing ? ' editing' : ''}`}
             role="group"
-            aria-label={p.editingSelectedLines ? 'Line options (selected lines)' : 'Line options (Line tool)'}
+            aria-label={panel.editing ? 'Options for the selection' : `${panel.caption} options`}
           >
-            <span className="palette-caption">{p.editingSelectedLines ? 'Selected' : 'Line'}</span>
+            <span className="palette-caption">{panel.caption}</span>
             <div className="palette-group">
-              {(['dash', 'startCap', 'endCap', 'routing'] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  className={`tool-btn${open === option ? ' active' : ''}`}
-                  title={`${OPTION_TITLES[option]}: ${nameOf(option)}`}
-                  aria-label={`${OPTION_TITLES[option]}: ${nameOf(option)}`}
-                  aria-haspopup="true"
-                  aria-expanded={open === option}
-                  onClick={() => setOpen((o) => (o === option ? null : option))}
-                >
-                  {optionIcon(option, p.lineStyle[option])}
-                </button>
-              ))}
+              {items.map((item) =>
+                item.kind === 'toggle' ? (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`tool-btn text${item.active ? ' active' : ''}`}
+                    title={item.title}
+                    aria-label={item.title}
+                    aria-pressed={item.active}
+                    onClick={item.onToggle}
+                  >
+                    {item.label}
+                  </button>
+                ) : (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`tool-btn${openId === item.id ? ' active' : ''}`}
+                    title={`${item.title}: ${nameOf(item)}`}
+                    aria-label={`${item.title}: ${nameOf(item)}`}
+                    aria-haspopup="true"
+                    aria-expanded={openId === item.id}
+                    onClick={() => setOpenId((o) => (o === item.id ? null : item.id))}
+                  >
+                    {item.buttonIcon}
+                  </button>
+                ),
+              )}
             </div>
           </div>
         )}
       </nav>
 
-      {open && !brushTool && (
-        <div className="line-flyout panel" role="group" aria-label={OPTION_TITLES[open]}>
-          <div className="flyout-title">{OPTION_TITLES[open]}</div>
+      {open && (
+        <div className="line-flyout panel" role="group" aria-label={open.title}>
+          <div className="flyout-title">{open.title}</div>
           <div className="flyout-grid">
-            {CHOICES[open].map((c) => {
-              const active = p.lineStyle[open] === c.value
+            {open.choices.map((c) => {
+              const active = open.value === c.value
               return (
                 <button
-                  key={c.value}
+                  key={String(c.value)}
                   type="button"
                   className={`flyout-option${active ? ' active' : ''}`}
                   aria-pressed={active}
                   onClick={() => {
-                    p.onLineStyle({ [open]: c.value } as Partial<LineStyle>)
-                    setOpen(null)
+                    open.onPick(c.value)
+                    setOpenId(null)
                   }}
                 >
-                  {optionIcon(open, c.value)}
+                  {c.icon}
                   <span>{c.name}</span>
                 </button>
               )

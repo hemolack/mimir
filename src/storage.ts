@@ -1,4 +1,5 @@
 import { DEFAULT_LINE, DEFAULT_PEN, DEFAULT_STYLE } from './constants.ts'
+import type { ThemeSetting } from './theme.ts'
 import type { BoardElement, LineStyle, PenSettings, StyleDefaults, Viewport } from './types.ts'
 
 const BOARD_KEY = 'whiteboard.board.v1'
@@ -13,6 +14,7 @@ export interface SavedSettings {
   style: StyleDefaults
   pen: PenSettings
   line: LineStyle
+  theme: ThemeSetting
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
@@ -98,6 +100,7 @@ export function loadSettings(): SavedSettings {
     style: { ...DEFAULT_STYLE, ...(style as Partial<StyleDefaults>) },
     pen: { ...DEFAULT_PEN, ...(pen as Partial<PenSettings>) },
     line: { ...DEFAULT_LINE, ...(line as Partial<LineStyle>) },
+    theme: isObj(raw) && (raw.theme === 'light' || raw.theme === 'dark') ? raw.theme : 'system',
   }
 }
 

@@ -2,6 +2,8 @@ import { FONT_FAMILY } from './constants'
 import { clampRasterScale, exportFileName, pdfLayout, wrapText } from './exportLayout'
 import type { PageSize } from './exportLayout'
 import { getBounds, labelBox, linePoints, polylineMidpoint, toMap, unionRects } from './geometry'
+import { CANVAS, paintFor } from './theme'
+import type { Paint, Theme } from './theme'
 import type { BoardElement, ElementMap, Rect } from './types'
 
 const PAD = 24
@@ -15,12 +17,18 @@ export interface ExportOptions {
   format: ExportFormat
   /** Only these elements (null = the whole board). */
   ids: ReadonlySet<string> | null
-  background: 'white' | 'transparent'
+  /** Solid = white for light colors, dark gray for dark colors. */
+  background: 'solid' | 'transparent'
+  /** Which color scheme to export in (independent of what's on screen). */
+  theme: Theme
   /** PNG pixel density. */
   scale: number
   page: PageSize
   boardId: string | null
 }
+
+/** Background for a solid export in each theme. */
+const SOLID_BACKGROUND: Record<Theme, string> = { light: '#ffffff', dark: CANVAS.dark }
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -49,7 +57,8 @@ function measurer(fontSize: number, fontFamily: string) {
   return (s: string) => ctx.measureText(s).width
 }
 
-const labelColor = (stroke: string) => (stroke === 'none' || stroke === 'transparent' ? '#1e1e1e' : stroke)
+const labelColor = (stroke: string, paint: Paint) =>
+  paint.ink(stroke === 'none' || stroke === 'transparent' ? '#1e1e1e' : stroke)
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>): SVGElementTagNameMap[K] {
   const el = document.createElementNS(SVG_NS, tag)
@@ -80,10 +89,10 @@ function textBlock(lines: string[], box: Rect, fontSize: number, color: string, 
 }
 
 /** SVG replacement for an element's HTML label, in the element group's own coordinates. */
-function labelFor(el: BoardElement, map: ElementMap, fontFamily: string): SVGElement | null {
+function labelFor(el: BoardElement, map: ElementMap, fontFamily: string, paint: Paint): SVGElement | null {
   if ((el.type !== 'shape' && el.type !== 'line') || !el.label) return null
   const measure = measurer(el.fontSize, fontFamily)
-  const color = labelColor(el.stroke)
+  const color = labelColor(el.stroke, paint)
 
   if (el.type === 'shape') {
     const b = labelBox(el.kind, el.w, el.h)
@@ -91,14 +100,14 @@ function labelFor(el: BoardElement, map: ElementMap, fontFamily: string): SVGEle
     return textBlock(wrapText(el.label, inner.w, measure), inner, el.fontSize, color, fontFamily)
   }
 
-  // Line label: a white tag centred on the line's midpoint.
+  // Line label: a paper-colored tag centred on the line's midpoint.
   const mid = polylineMidpoint(linePoints(el, map))
   const lines = wrapText(el.label, 288, measure)
   const w = Math.max(...lines.map(measure)) + 12
   const h = lines.length * el.fontSize * 1.25 + 2
   const box = { x: mid.x - w / 2, y: mid.y - h / 2, w, h }
   const g = svgEl('g', {})
-  g.appendChild(svgEl('rect', { x: box.x, y: box.y, width: w, height: h, rx: 4, fill: '#ffffff' }))
+  g.appendChild(svgEl('rect', { x: box.x, y: box.y, width: w, height: h, rx: 4, fill: paint.paper }))
   g.appendChild(textBlock(lines, box, el.fontSize, color, fontFamily))
   return g
 }
@@ -109,12 +118,13 @@ const isInvisible = (v: string | null) => v === 'none' || v === 'transparent'
  * A standalone SVG of the board (or some elements), cropped to the content.
  * It is cloned from what's on screen, then made portable: HTML labels become
  * wrapped SVG text and the invisible hit-areas used for clicking are dropped.
+ * The on-screen board must currently be rendered in `opts.paint`'s theme.
  */
 export function buildExportSvg(
   svg: SVGSVGElement,
   elements: BoardElement[],
-  opts: { ids: ReadonlySet<string> | null; background: 'white' | 'transparent'; fontFamily: string },
-): { svg: SVGSVGElement; width: number; height: number } | null {
+  opts: { ids: ReadonlySet<string> | null; background: string | null; fontFamily: string; paint: Paint },
+): PreparedExport | null {
   const layer = svg.querySelector('[data-layer="content"]')
   const chosen = opts.ids ? elements.filter((el) => opts.ids!.has(el.id)) : elements
   const b = contentBounds(chosen, elements)
@@ -125,7 +135,7 @@ export function buildExportSvg(
   const width = Math.ceil(b.w + PAD * 2)
   const height = Math.ceil(b.h + PAD * 2)
   const out = svgEl('svg', { xmlns: SVG_NS, viewBox: `${x} ${y} ${width} ${height}`, width, height })
-  if (opts.background === 'white') out.appendChild(svgEl('rect', { x, y, width, height, fill: '#ffffff' }))
+  if (opts.background) out.appendChild(svgEl('rect', { x, y, width, height, fill: opts.background }))
 
   const map = toMap(elements)
   const clone = layer.cloneNode(true) as SVGGElement
@@ -137,7 +147,7 @@ export function buildExportSvg(
       continue
     }
     node.querySelectorAll('foreignObject').forEach((fo) => fo.remove())
-    const label = labelFor(el, map, opts.fontFamily)
+    const label = labelFor(el, map, opts.fontFamily, opts.paint)
     if (label) node.appendChild(label)
   }
   for (const node of [clone, ...clone.querySelectorAll('*')]) {
@@ -156,7 +166,13 @@ export function buildExportSvg(
 
 // ---------- Formats ----------
 
-async function toPng(built: { svg: SVGSVGElement; width: number; height: number }, scale: number): Promise<Blob> {
+export interface PreparedExport {
+  svg: SVGSVGElement
+  width: number
+  height: number
+}
+
+async function toPng(built: PreparedExport, scale: number): Promise<Blob> {
   const markup = new XMLSerializer().serializeToString(built.svg)
   const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml' }))
   try {
@@ -176,7 +192,7 @@ async function toPng(built: { svg: SVGSVGElement; width: number; height: number 
   }
 }
 
-async function toPdf(built: { svg: SVGSVGElement; width: number; height: number }, page: PageSize): Promise<Blob> {
+async function toPdf(built: PreparedExport, page: PageSize): Promise<Blob> {
   // Loaded on demand: the PDF libraries are large and only needed here.
   const [{ jsPDF }, { svg2pdf }] = await Promise.all([import('jspdf'), import('svg2pdf.js')])
   const l = pdfLayout(built.width, built.height, page)
@@ -194,15 +210,28 @@ async function toPdf(built: { svg: SVGSVGElement; width: number; height: number 
   return doc.output('blob')
 }
 
-/** Export the board. Returns false when there is nothing to export. */
-export async function exportBoard(svg: SVGSVGElement, elements: BoardElement[], opts: ExportOptions): Promise<boolean> {
-  const built = buildExportSvg(svg, elements, {
+/**
+ * Step 1 of an export, synchronous: snapshot the board as a standalone SVG.
+ * The caller must have the board rendered in `opts.theme` at this moment
+ * (App switches the render theme, calls this, and switches back in one task,
+ * so nothing flashes on screen). Returns null when there is nothing to export.
+ */
+export function prepareExport(svg: SVGSVGElement, elements: BoardElement[], opts: ExportOptions): PreparedExport | null {
+  const paint = paintFor(opts.theme)
+  const solid = SOLID_BACKGROUND[opts.theme]
+  // A PDF page is white already, so only a dark PDF needs a painted background.
+  const background =
+    opts.format === 'pdf' ? (opts.theme === 'dark' ? solid : null) : opts.background === 'solid' ? solid : null
+  return buildExportSvg(svg, elements, {
     ids: opts.ids,
-    // A PDF page is already white; a transparent PNG/SVG is a choice.
-    background: opts.format === 'pdf' ? 'transparent' : opts.background,
+    background,
     fontFamily: opts.format === 'pdf' ? PDF_FONT : FONT_FAMILY,
+    paint,
   })
-  if (!built) return false
+}
+
+/** Step 2 of an export, asynchronous: turn the snapshot into a file and download it. */
+export async function deliverExport(built: PreparedExport, opts: ExportOptions): Promise<void> {
   const name = exportFileName(opts.boardId, opts.format)
   if (opts.format === 'svg') {
     download(new Blob([new XMLSerializer().serializeToString(built.svg)], { type: 'image/svg+xml' }), name)
@@ -211,7 +240,6 @@ export async function exportBoard(svg: SVGSVGElement, elements: BoardElement[], 
   } else {
     download(await toPdf(built, opts.page), name)
   }
-  return true
 }
 
 /** Pixel size of a PNG export, for showing in the dialog. */

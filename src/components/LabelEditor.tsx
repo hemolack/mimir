@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONT_FAMILY } from '../constants'
 import { labelBox, linePoints, polylineMidpoint } from '../geometry'
+import { usePaint } from '../theme'
 import type { ElementMap, LineElement, ShapeElement, Viewport } from '../types'
 
 interface LabelEditorProps {
@@ -17,6 +18,7 @@ interface LabelEditorProps {
 export function LabelEditor({ element, map, viewport, initialText, onCommit, onCancel }: LabelEditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const done = useRef(false)
+  const paint = usePaint()
   const [text, setText] = useState(initialText ?? element.label)
 
   useEffect(() => {
@@ -81,7 +83,7 @@ export function LabelEditor({ element, map, viewport, initialText, onCommit, onC
           fontSize,
           fontFamily: FONT_FAMILY,
           height,
-          color: element.stroke === 'none' ? '#1e1e1e' : element.stroke,
+          color: paint.ink(element.stroke === 'none' ? '#1e1e1e' : element.stroke),
         }}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {

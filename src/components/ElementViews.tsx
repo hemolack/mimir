@@ -17,9 +17,13 @@ import {
   svgPathFromStroke,
 } from '../geometry'
 import { bezierPath } from '../curveFit'
+import { usePaint } from '../theme'
+import type { Paint } from '../theme'
 import type { CurveElement, LineElement, PathElement, Point, Rect, Routing, ShapeElement } from '../types'
 
-const labelColor = (stroke: string) => (stroke === 'none' || stroke === 'transparent' ? '#1e1e1e' : stroke)
+/** Label text uses the element's stroke color (default ink if it has none), mapped for the theme. */
+const labelColor = (stroke: string, paint: Paint) =>
+  paint.ink(stroke === 'none' || stroke === 'transparent' ? '#1e1e1e' : stroke)
 
 /** Labels use foreignObject so text wraps; inline styles keep SVG export self-contained. */
 function ShapeLabel({ box, text, color, fontSize }: { box: Rect; text: string; color: string; fontSize: number }) {
@@ -58,7 +62,9 @@ function ShapeLabel({ box, text, color, fontSize }: { box: Rect; text: string; c
 }
 
 export const ShapeView = memo(function ShapeView({ el, hideLabel }: { el: ShapeElement; hideLabel: boolean }) {
+  const paint = usePaint()
   const isText = el.kind === 'text'
+  const stroke = paint.ink(el.stroke)
   const detail = shapeDetail(el.kind, el.w, el.h)
   const dash = dashArray(el.dash, el.strokeWidth)
   const rotate = el.rotation ? ` rotate(${(el.rotation * 180) / Math.PI} ${el.w / 2} ${el.h / 2})` : ''
@@ -71,8 +77,8 @@ export const ShapeView = memo(function ShapeView({ el, hideLabel }: { el: ShapeE
       <g transform={flip}>
         <path
           d={shapePath(el.kind, el.w, el.h)}
-          fill={isText ? 'transparent' : el.fill}
-          stroke={isText ? 'none' : el.stroke}
+          fill={isText ? 'transparent' : paint.fill(el.fill)}
+          stroke={isText ? 'none' : stroke}
           strokeWidth={el.strokeWidth}
           strokeDasharray={dash}
           strokeLinecap="round"
@@ -83,7 +89,7 @@ export const ShapeView = memo(function ShapeView({ el, hideLabel }: { el: ShapeE
           <path
             d={detail}
             fill="none"
-            stroke={el.stroke}
+            stroke={stroke}
             strokeWidth={el.strokeWidth}
             strokeDasharray={dash}
             strokeLinecap="round"
@@ -95,7 +101,7 @@ export const ShapeView = memo(function ShapeView({ el, hideLabel }: { el: ShapeE
         <ShapeLabel
           box={labelBox(el.kind, el.w, el.h)}
           text={el.label}
-          color={labelColor(el.stroke)}
+          color={labelColor(el.stroke, paint)}
           fontSize={el.fontSize}
         />
       )}
@@ -126,6 +132,8 @@ export function DoubleRails(props: { points: Point[]; routing: Routing; stroke: 
 }
 
 export function LineView({ el, points, hideLabel }: { el: LineElement; points: Point[]; hideLabel: boolean }) {
+  const paint = usePaint()
+  const stroke = paint.ink(el.stroke)
   const d = linePath(points, el.routing)
   const n = points.length
   const caps =
@@ -140,12 +148,12 @@ export function LineView({ el, points, hideLabel }: { el: LineElement; points: P
       {/* Wide invisible stroke makes thin lines easy to hit, especially on touch. */}
       <path d={d} fill="none" stroke="transparent" strokeWidth={Math.max(18, el.strokeWidth + 14)} pointerEvents="stroke" />
       {el.dash === 'double' ? (
-        <DoubleRails points={drawn} routing={el.routing} stroke={el.stroke} strokeWidth={el.strokeWidth} />
+        <DoubleRails points={drawn} routing={el.routing} stroke={stroke} strokeWidth={el.strokeWidth} />
       ) : (
         <path
           d={linePath(drawn, el.routing)}
           fill="none"
-          stroke={el.stroke}
+          stroke={stroke}
           strokeWidth={el.strokeWidth}
           strokeDasharray={dashArray(el.dash, el.strokeWidth)}
           strokeLinecap="round"
@@ -159,8 +167,8 @@ export function LineView({ el, points, hideLabel }: { el: LineElement; points: P
             <path
               key={i}
               d={cap.d}
-              fill={capFillColor(cap.fill, el.stroke)}
-              stroke={el.stroke}
+              fill={capFillColor(cap.fill, stroke, paint.paper)}
+              stroke={stroke}
               strokeWidth={el.strokeWidth}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -183,10 +191,10 @@ export function LineView({ el, points, hideLabel }: { el: LineElement; points: P
             <span
               style={{
                 pointerEvents: 'auto',
-                background: '#ffffff',
+                background: paint.paper,
                 padding: '1px 6px',
                 borderRadius: 4,
-                color: labelColor(el.stroke),
+                color: labelColor(el.stroke, paint),
                 fontSize: el.fontSize,
                 fontFamily: FONT_FAMILY,
                 lineHeight: 1.25,
@@ -206,14 +214,15 @@ export function LineView({ el, points, hideLabel }: { el: LineElement; points: P
 }
 
 export const CurveView = memo(function CurveView({ el }: { el: CurveElement }) {
+  const paint = usePaint()
   const d = useMemo(() => bezierPath(el.points, el.closed), [el.points, el.closed])
   return (
     <g data-id={el.id}>
       <path d={d} fill="none" stroke="transparent" strokeWidth={Math.max(18, el.strokeWidth + 14)} pointerEvents="stroke" />
       <path
         d={d}
-        fill={el.closed ? el.fill : 'none'}
-        stroke={el.stroke}
+        fill={el.closed ? paint.fill(el.fill) : 'none'}
+        stroke={paint.ink(el.stroke)}
         strokeWidth={el.strokeWidth}
         strokeDasharray={dashArray(el.dash, el.strokeWidth)}
         strokeLinecap="round"
@@ -225,6 +234,9 @@ export const CurveView = memo(function CurveView({ el }: { el: CurveElement }) {
 })
 
 export const PathView = memo(function PathView({ el }: { el: PathElement }) {
+  const paint = usePaint()
+  // Highlighter tints what's under it: darken on a light canvas, lighten on a dark one.
+  const highlighterBlend = paint.theme === 'dark' ? 'screen' : 'multiply'
   const d = useMemo(
     () =>
       svgPathFromStroke(
@@ -243,12 +255,12 @@ export const PathView = memo(function PathView({ el }: { el: PathElement }) {
     <path
       data-id={el.id}
       d={d}
-      fill={el.stroke}
+      fill={paint.ink(el.stroke)}
       opacity={el.opacity}
       stroke="transparent"
       strokeWidth={10}
       pointerEvents="all"
-      style={el.highlighter ? { mixBlendMode: 'multiply' } : undefined}
+      style={el.highlighter ? { mixBlendMode: highlighterBlend } : undefined}
     />
   )
 })

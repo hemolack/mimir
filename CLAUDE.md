@@ -21,11 +21,24 @@ React 19 + TypeScript + Vite whiteboard. SVG rendering, pointer events (mouse, t
 - `src/patch.ts` — `Patch` (upserts/deletes/order): the unit of change for both sync and undo
 - `src/sync.ts` — client sync: view = server-confirmed state + own unacknowledged ops; the server echoes every op to everyone in one order, so clients converge
 - `server/boards.ts` — WebSocket rooms (`/ws?board=<id>`), sanitizes input, persists to `data/boards/<id>.json`; `server/index.ts` is the production entry; `vite.config.ts` mounts the same rooms in dev
+- `src/components/optionItems.tsx` — what the palette's bottom options area shows: `lineToolOptions` (Line tool defaults) and `selectionOptions` (restyle the selection; each option appears only if something selected has that property). Add new per-element options here, not in `Palette.tsx`.
 - `src/exporters.ts` — PNG/PDF/SVG export. Clones the on-screen content layer, swaps HTML (`foreignObject`) labels for wrapped SVG `<text>`, drops click-target paths; PNG rasterizes that SVG, PDF uses `jspdf` + `svg2pdf.js` (lazy-loaded) with Helvetica. Pure layout math is in `src/exportLayout.ts`.
 - `src/protocol.ts` — wire messages shared by client and server
 - Routing: `/` = private board in localStorage; `/board/<id>` = shared board
 - `src/components/Canvas.tsx` — all pointer interaction (gesture state machine), selection overlay, context menu and label editor placement
 - `src/storage.ts` — localStorage load/save and validation of untrusted board data
+
+## Design notes
+
+- `docs/design/signalr-backend.md` — proposed (not built) optional ASP.NET Core SignalR backend alongside the Node server.
+- `docs/design/embedding-and-security.md` — proposed (not built) iframe embedding, embed mode, and security hardening (origin checks, `frame-ancestors`, stricter validation, access tokens, rate limits).
+
+## Theming (light/dark)
+
+- `src/theme.ts`: elements always store light-mode colors; dark mode maps them at render time via `usePaint()` (`ink` for strokes/text/brush, `fill` for fills, `paper` for hollow caps and line-label tags). Never write mapped colors back into elements.
+- New element views must take colors through `usePaint()`; new UI CSS must use the variables in `styles.css` (`:root` and `:root[data-theme='dark']`), not hard-coded colors.
+- Export renders the board in the export's chosen theme: `App.runExport` flips `renderTheme` with `flushSync`, calls the synchronous `prepareExport`, and flips back in the same task (no visible flash). Keep `prepareExport` synchronous.
+- `CANVAS` in `theme.ts` must match `--bg` in `styles.css`.
 
 ## Conventions and gotchas
 
@@ -39,5 +52,7 @@ React 19 + TypeScript + Vite whiteboard. SVG rendering, pointer events (mouse, t
 - Lines bound to shapes are resolved at render time via `linePoints`; `start`/`end` are only authoritative for unbound ends. Bindings survive moving/rotating/scaling the line itself (the attachment slides along the outline); only dragging an end off a shape, deleting the shape, or copying the line alone removes them. When deleting or copying, use `removeElements` / `bakeLines` so bound ends keep their positions.
 - Attachment points use the real outline (`boundaryPoint`: ellipse/diamond analytically, triangle/parallelogram/hexagon via `outlinePolygon`, others the box). New polygonal shapes need an `outlinePolygon` entry.
 - The canvas `preventDefault`s `mousedown` so it never steals focus; otherwise a label editor opened on pointerdown is blurred immediately.
+- Don't use `window.prompt`/`confirm`/`alert`: embedded browsers (e.g. the Claude desktop preview) throw on `prompt()` and auto-cancel `confirm()`. Use `TextDialog` / `ConfirmDialog` from `src/components/Dialogs.tsx`.
+- The dev server hot-reloads after every file write, so when a change spans several edits, add declarations/exports before their uses. A half-applied state (e.g. a component using an import that doesn't exist yet) can leave a blank page that only a dev-server restart clears.
 - Don't put `//` comments between JSX attributes — the Vite 8 transform silently drops the following prop. Put comments above the element.
 - Labels render in `foreignObject` with inline styles so SVG export stays self-contained.

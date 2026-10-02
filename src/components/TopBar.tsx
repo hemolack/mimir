@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PeerInfo, PeerPresence } from '../protocol'
 import type { SyncStatus } from '../sync'
-import { MenuIcon, MinusIcon, PlusIcon, RedoIcon, ShareIcon, UndoIcon } from './icons'
+import type { Theme, ThemeSetting } from '../theme'
+import { MenuIcon, MinusIcon, MoonIcon, PlusIcon, RedoIcon, ShareIcon, SunIcon, UndoIcon } from './icons'
 
 interface TopBarProps {
   zoom: number
@@ -14,6 +15,10 @@ interface TopBarProps {
   onZoomReset(): void
   onZoomFit(): void
   onExport(): void
+  /** The theme being shown, and the user's setting (which may be 'system'). */
+  theme: Theme
+  themeSetting: ThemeSetting
+  onThemeSetting(s: ThemeSetting): void
   onSave(): void
   onOpen(): void
   onClear(): void
@@ -127,7 +132,16 @@ export function TopBar(p: TopBarProps) {
           <PlusIcon />
         </button>
       </div>
-      <div className="panel menu-anchor" ref={menuRef}>
+      <div className="panel row menu-anchor" ref={menuRef}>
+        <button
+          type="button"
+          className="tool-btn"
+          title={p.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={p.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          onClick={() => p.onThemeSetting(p.theme === 'dark' ? 'light' : 'dark')}
+        >
+          {p.theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+        </button>
         <button
           type="button"
           className={`tool-btn${menuOpen ? ' active' : ''}`}
@@ -141,6 +155,24 @@ export function TopBar(p: TopBarProps) {
         </button>
         {menuOpen && (
           <div className="menu panel" role="menu">
+            <div className="menu-row" role="group" aria-label="Appearance">
+              <span className="menu-row-label">Appearance</span>
+              <div className="segmented">
+                {(['system', 'light', 'dark'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={p.themeSetting === s}
+                    className={p.themeSetting === s ? 'active' : ''}
+                    onClick={() => p.onThemeSetting(s)}
+                  >
+                    {s === 'system' ? 'Auto' : s === 'light' ? 'Light' : 'Dark'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="menu-divider" role="separator" />
             {item('Zoom to fit', p.onZoomFit)}
             {item('New shared board', collab.onNewShared)}
             {collab.shared && item('Open my private board', collab.onOpenPrivate)}

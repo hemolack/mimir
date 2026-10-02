@@ -45,6 +45,17 @@ export const CurveIcon = () => (
     <circle cx="20" cy="6" r="1.6" fill="currentColor" />
   </Icon>
 )
+export const SunIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+  </Icon>
+)
+export const MoonIcon = () => (
+  <Icon>
+    <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+  </Icon>
+)
 export const ShareIcon = () => (
   <Icon size={18}>
     <circle cx="18" cy="5" r="2.5" />
@@ -219,7 +230,7 @@ export function ShapeIcon({ kind }: { kind: ShapeKind }) {
 }
 
 /** Icons paint caps in the current text color; hollow caps get the panel color inside. */
-const iconCapFill = (fill: CapFill) => (fill === 'stroke' ? 'currentColor' : fill === 'paper' ? '#fff' : 'none')
+const iconCapFill = (fill: CapFill) => (fill === 'stroke' ? 'currentColor' : fill === 'paper' ? 'var(--panel)' : 'none')
 
 /** A line with dashes/caps drawn as they'd look; used for the Line tool options and menus. */
 export function LineIcon({ style }: { style: Partial<LineStyle> }) {

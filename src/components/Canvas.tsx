@@ -30,6 +30,7 @@ import {
 import type { NodePart } from '../curveEdit'
 import { strokeToCurve } from '../curveFit'
 import type { PeerPresence } from '../protocol'
+import { usePaint } from '../theme'
 import type {
   BoardElement,
   CurveElement,
@@ -171,6 +172,7 @@ const coalesced = (e: PointerEvent): PointerEvent[] => {
 
 export function Canvas(props: CanvasProps) {
   const { board, viewport, tool, selectedIds, editing, svgRef } = props
+  const paint = usePaint()
   const wrapRef = useRef<HTMLDivElement>(null)
   const vpRef = useRef(viewport)
   vpRef.current = viewport
@@ -1121,7 +1123,7 @@ export function Canvas(props: CanvasProps) {
               <polyline
                 points={draft.map((p) => `${p.x},${p.y}`).join(' ')}
                 fill="none"
-                stroke={props.pen.color}
+                stroke={paint.ink(props.pen.color)}
                 strokeWidth={props.pen.size}
                 strokeOpacity={0.55}
                 strokeLinecap="round"

@@ -1,17 +1,57 @@
+/* Theme tokens. App sets data-theme="light|dark" on <html>; the board's own
+   colors are mapped in JS (src/theme.ts) and must stay in step with --bg. */
 :root {
-  --bg: #f8f9fa;
+  --bg: #f8f9fa; /* = CANVAS.light */
   --panel: #ffffff;
   --border: #e3e6ea;
   --text: #1e1e1e;
   --muted: #6b7280;
   --accent: #4f46e5;
   --accent-soft: #e8e7fd;
+  --accent-wash: rgb(79 70 229 / 0.08);
+  --on-accent: #ffffff;
   --danger: #d9363e;
+  --danger-soft: #fdecec;
   --grid: #d3d7dc;
+  --hover: #f1f3f5;
+  --surface-2: #f1f3f5;
+  --editor-bg: rgb(255 255 255 / 0.9);
+  --backdrop: rgb(0 0 0 / 0.25);
+  --tooltip-bg: #1e1e1e;
+  --tooltip-text: #ffffff;
+  --highlight-bg: #fff3bf;
+  --highlight-text: #8a6d00;
+  --swatch-border: rgb(0 0 0 / 0.15);
   --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 16px rgb(0 0 0 / 0.08);
   color-scheme: light;
   font-family: ui-rounded, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
   color: var(--text);
+}
+
+:root[data-theme='dark'] {
+  --bg: #1f2023; /* = CANVAS.dark */
+  --panel: #2a2b2f;
+  --border: #3b3d42;
+  --text: #e6e6e6;
+  --muted: #a0a6ae;
+  --accent: #8f89ff;
+  --accent-soft: #38355f;
+  --accent-wash: rgb(143 137 255 / 0.12);
+  --on-accent: #17162e;
+  --danger: #ff7a7a;
+  --danger-soft: #4a2628;
+  --grid: #3a3d42;
+  --hover: #35373c;
+  --surface-2: #232428;
+  --editor-bg: rgb(42 43 47 / 0.92);
+  --backdrop: rgb(0 0 0 / 0.55);
+  --tooltip-bg: #e6e6e6;
+  --tooltip-text: #1e1e1e;
+  --highlight-bg: #5c4b00;
+  --highlight-text: #ffe066;
+  --swatch-border: rgb(255 255 255 / 0.2);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.45);
+  color-scheme: dark;
 }
 
 * {
@@ -62,13 +102,13 @@ body,
 }
 
 .handle {
-  fill: #ffffff;
+  fill: var(--panel);
   stroke: var(--accent);
 }
 
 .handle.control {
   fill: var(--accent);
-  stroke: #ffffff;
+  stroke: var(--panel);
 }
 
 .handle.anchor.active {
@@ -81,7 +121,7 @@ body,
 }
 
 .pivot {
-  fill: #ffffff;
+  fill: var(--panel);
   stroke: var(--accent);
 }
 
@@ -93,8 +133,8 @@ body,
   position: absolute;
   padding: 3px 7px;
   border-radius: 6px;
-  background: #1e1e1e;
-  color: #fff;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -102,12 +142,12 @@ body,
 }
 
 .marquee {
-  fill: rgb(79 70 229 / 0.08);
+  fill: var(--accent-wash);
   stroke: var(--accent);
 }
 
 .bind-target {
-  fill: rgb(79 70 229 / 0.06);
+  fill: var(--accent-wash);
   stroke: var(--accent);
 }
 
@@ -157,7 +197,7 @@ button {
 }
 
 .tool-btn:hover:not(:disabled) {
-  background: #f1f3f5;
+  background: var(--hover);
 }
 
 .tool-btn.active,
@@ -168,7 +208,7 @@ button {
 
 .tool-btn.danger:hover {
   color: var(--danger);
-  background: #fdecec;
+  background: var(--danger-soft);
 }
 
 .tool-btn:disabled {
@@ -195,18 +235,18 @@ button {
   height: 28px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgb(0 0 0 / 0.15);
+  border: 1px solid var(--swatch-border);
   cursor: pointer;
   touch-action: manipulation;
 }
 
 .swatch.active {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent);
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent);
 }
 
 .swatch.none,
 .color-chip.none {
-  background: linear-gradient(135deg, transparent 45%, var(--danger) 45%, var(--danger) 55%, transparent 55%), #fff;
+  background: linear-gradient(135deg, transparent 45%, var(--danger) 45%, var(--danger) 55%, transparent 55%), var(--panel);
 }
 
 .color-chip {
@@ -217,7 +257,7 @@ button {
 }
 
 .color-chip.filled {
-  border: 1px solid rgb(0 0 0 / 0.2);
+  border: 1px solid var(--swatch-border);
 }
 
 .dot {
@@ -321,8 +361,29 @@ button {
   touch-action: manipulation;
 }
 
+/* Color dot and text-size glyph used in option buttons and flyouts. */
+.choice-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--swatch-border);
+}
+
+.choice-swatch.none {
+  background: linear-gradient(135deg, transparent 45%, var(--danger) 45%, var(--danger) 55%, transparent 55%), var(--panel);
+}
+
+.text-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .flyout-option:hover {
-  background: #f1f3f5;
+  background: var(--hover);
 }
 
 .flyout-option.active {
@@ -357,13 +418,13 @@ button {
   height: 20px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgb(0 0 0 / 0.15);
+  border: 1px solid var(--swatch-border);
   cursor: pointer;
   touch-action: manipulation;
 }
 
 .mini-swatch.active {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--accent);
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--accent);
 }
 
 .mini-size {
@@ -382,7 +443,7 @@ button {
 }
 
 .mini-size:hover {
-  background: #f1f3f5;
+  background: var(--hover);
 }
 
 .mini-size.active {
@@ -402,8 +463,8 @@ button {
 
 .highlighter-toggle.active {
   border-color: transparent;
-  background: #fff3bf;
-  color: #8a6d00;
+  background: var(--highlight-bg);
+  color: var(--highlight-text);
   font-weight: 600;
 }
 
@@ -463,7 +524,7 @@ button {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 2px solid #fff;
+  border: 2px solid var(--panel);
   border-radius: 50%;
   color: #fff;
   font-size: 11px;
@@ -491,7 +552,7 @@ button {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -531,7 +592,7 @@ button {
 }
 
 .zoom-label:hover {
-  background: #f1f3f5;
+  background: var(--hover);
 }
 
 .menu-anchor {
@@ -542,11 +603,39 @@ button {
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
-  min-width: 190px;
+  min-width: 250px;
   padding: 6px;
   display: flex;
   flex-direction: column;
   z-index: 10;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 4px 4px 10px;
+}
+
+.menu-row-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.menu-row .segmented {
+  flex-wrap: nowrap;
+}
+
+.menu-row .segmented button {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.menu-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
 }
 
 .menu-item {
@@ -560,7 +649,7 @@ button {
 }
 
 .menu-item:hover {
-  background: #f1f3f5;
+  background: var(--hover);
 }
 
 .menu-item.danger {
@@ -636,7 +725,7 @@ button {
   padding: 4px;
   border: 1.5px solid var(--accent);
   border-radius: 6px;
-  background: rgb(255 255 255 / 0.9);
+  background: var(--editor-bg);
   text-align: center;
   line-height: 1.25;
   outline: none;
@@ -653,7 +742,7 @@ button {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgb(0 0 0 / 0.25);
+  background: var(--backdrop);
   z-index: 30;
 }
 
@@ -697,7 +786,7 @@ button {
   gap: 2px;
   padding: 2px;
   border-radius: 8px;
-  background: #f1f3f5;
+  background: var(--hover);
 }
 
 .segmented button {
@@ -710,7 +799,7 @@ button {
 }
 
 .segmented button.active {
-  background: #fff;
+  background: var(--panel);
   color: var(--accent);
   font-weight: 600;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
@@ -722,11 +811,57 @@ button {
   outline-offset: 1px;
 }
 
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialog-field .field-label {
+  width: auto;
+}
+
+.dialog-input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.dialog-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.dialog-message,
+.dialog-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.dialog-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.btn.primary.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-accent);
+}
+
 .dialog-error {
   margin: 0;
   padding: 8px 10px;
   border-radius: 6px;
-  background: #fdecec;
+  background: var(--danger-soft);
   color: var(--danger);
   font-size: 13px;
 }
@@ -743,7 +878,8 @@ button {
   padding: 0 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
+  color: var(--text);
   font-size: 14px;
   cursor: pointer;
 }
@@ -751,7 +887,7 @@ button {
 .btn.primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -792,8 +928,8 @@ button {
   transform: translateX(-50%);
   padding: 10px 14px;
   border-radius: 10px;
-  background: #1e1e1e;
-  color: #fff;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
   font-size: 14px;
   box-shadow: var(--shadow);
   z-index: 20;

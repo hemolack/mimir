@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { ExportFormat } from '../exporters'
 import type { PageSize } from '../exportLayout'
+import type { Theme } from '../theme'
 
 export interface ExportChoice {
   format: ExportFormat
   selectionOnly: boolean
-  background: 'white' | 'transparent'
+  /** Color scheme of the exported file, independent of the screen. */
+  theme: Theme
+  background: 'solid' | 'transparent'
   scale: number
   page: PageSize
 }
@@ -127,12 +130,22 @@ export function ExportDialog(p: ExportDialogProps) {
           onChange={(v) => set({ selectionOnly: v === 'sel' })}
         />
 
+        <Segmented
+          label="Colors"
+          value={choice.theme}
+          options={[
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+          ]}
+          onChange={(theme) => set({ theme })}
+        />
+
         {choice.format !== 'pdf' && (
           <Segmented
             label="Background"
             value={choice.background}
             options={[
-              { value: 'white', label: 'White' },
+              { value: 'solid', label: choice.theme === 'dark' ? 'Dark gray' : 'White' },
               { value: 'transparent', label: 'Transparent' },
             ]}
             onChange={(background) => set({ background })}

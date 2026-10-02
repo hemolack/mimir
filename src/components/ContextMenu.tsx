@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { FILL_COLORS, FONT_SIZES, LINE_CAPS, LINE_DASHES, LINE_ROUTES, STROKE_COLORS, STROKE_WIDTHS } from '../constants'
+import { COLOR_NAMES, FILL_COLORS, FONT_SIZES, LINE_CAPS, LINE_DASHES, LINE_ROUTES, STROKE_COLORS, STROKE_WIDTHS } from '../constants'
 import { isLabelable } from '../ops'
+import { colorName, usePaint } from '../theme'
 import type { BoardElement, CurveElement, Rect, ShapeElement, StyleDefaults } from '../types'
 import {
   BackIcon,
@@ -39,12 +40,14 @@ export interface ContextMenuProps {
 }
 
 
-function Swatch({ color, active, onClick, label }: { color: string; active: boolean; onClick(): void; label: string }) {
+/** A color choice. `shown` is how the color looks in the current theme (it may differ from the stored value). */
+function Swatch(props: { color: string; shown: string; active: boolean; onClick(): void; label: string }) {
+  const { color, shown, active, onClick, label } = props
   return (
     <button
       type="button"
       className={`swatch${active ? ' active' : ''}${color === 'none' ? ' none' : ''}`}
-      style={color === 'none' ? undefined : { background: color }}
+      style={color === 'none' ? undefined : { background: shown }}
       title={label}
       aria-label={label}
       onClick={onClick}
@@ -55,6 +58,7 @@ function Swatch({ color, active, onClick, label }: { color: string; active: bool
 export function ContextMenu(p: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<Popover>(null)
+  const paint = usePaint()
 
   const first = p.selected[0]
   const shapes = p.selected.filter((el) => el.type === 'shape')
@@ -132,7 +136,7 @@ export function ContextMenu(p: ContextMenuProps) {
           aria-label="Stroke color"
           onClick={() => toggle('stroke')}
         >
-          <span className="color-chip" style={{ borderColor: stroke, background: 'transparent' }} />
+          <span className="color-chip" style={{ borderColor: paint.ink(stroke), background: 'transparent' }} />
         </button>
         {fillable.length > 0 && (
           <button
@@ -142,7 +146,10 @@ export function ContextMenu(p: ContextMenuProps) {
             aria-label="Fill color"
             onClick={() => toggle('fill')}
           >
-            <span className={`color-chip filled${fill === 'none' ? ' none' : ''}`} style={fill !== 'none' ? { background: fill } : undefined} />
+            <span
+              className={`color-chip filled${fill === 'none' ? ' none' : ''}`}
+              style={fill && fill !== 'none' ? { background: paint.fill(fill) } : undefined}
+            />
           </button>
         )}
         {outlined && (
@@ -199,7 +206,8 @@ export function ContextMenu(p: ContextMenuProps) {
               <Swatch
                 key={c}
                 color={c}
-                label={`Stroke ${c}`}
+                shown={paint.ink(c)}
+                label={`Stroke: ${colorName(COLOR_NAMES, c, paint.theme)}`}
                 active={stroke === c}
                 onClick={() => p.onPatch((el) => ({ ...el, stroke: c }), { stroke: c })}
               />
@@ -215,6 +223,7 @@ export function ContextMenu(p: ContextMenuProps) {
               <Swatch
                 key={c}
                 color={c}
+                shown={paint.fill(c)}
                 label={c === 'none' ? 'No fill' : `Fill ${c}`}
                 active={fill === c}
                 onClick={() =>
