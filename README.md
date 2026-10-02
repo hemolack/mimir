@@ -64,7 +64,9 @@ Notes for any host (VM, PaaS, container):
 
 ## Deploy to Azure (App Service)
 
-[`infra/main.bicep`](infra/main.bicep) creates a Linux App Service plan and web app configured for this server: Node runtime, `npm start`, WebSockets on, Always On, HTTPS only, one instance, and boards stored in `/home/data/boards` (App Service's persistent storage, kept across restarts and redeploys). Code is deployed as a zip and built on Azure.
+[`infra/main.bicep`](infra/main.bicep) creates a Linux App Service plan and web app configured for this server: Node runtime, `npm start`, WebSockets on, Always On, HTTPS only, one instance, and boards stored in `/home/data/boards` (App Service's persistent storage, kept across restarts and redeploys).
+
+Deployment is **pull-based**: App Service clones this public GitHub repository itself (`master` branch) and builds it on Azure with `npm install` and `npm run build`. Nothing is pushed from GitHub: there is no Actions workflow or webhook, and a new commit is deployed only when you trigger a sync.
 
 You need the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) and an Azure subscription. The default plan size (B1) is a paid tier; Basic or higher is required for Always On and reliable WebSockets.
 
@@ -75,59 +77,30 @@ You need the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli
    az group create --name whiteboard-rg --location eastus
    ```
 
-2. **Create the infrastructure.** `appName` must be globally unique; it becomes `https://<appName>.azurewebsites.net`. For this manual zip deploy, pass `buildOnAzure=true` so Azure builds the uploaded source:
+2. **Create the infrastructure.** `appName` must be globally unique; it becomes `https://<appName>.azurewebsites.net`. Creating the web app also pulls and builds the code once (allow a few minutes):
 
    ```bash
-   az deployment group create --resource-group whiteboard-rg --template-file infra/main.bicep --parameters appName=<your-app-name> buildOnAzure=true
+   az deployment group create --resource-group whiteboard-rg --template-file infra/main.bicep --parameters appName=<your-app-name>
    ```
 
-   (To deploy automatically from GitHub instead, see [Deploy from GitHub](#deploy-from-github-github-actions) below.)
+   Optional parameters: `repoUrl` (default `https://github.com/hemolack/mimir.git`; use your fork's URL if you have one, it must be public), `branch` (default `master`), `skuName` (default `B1`) and `nodeVersion` (default `NODE|22-lts`; list options with `az webapp list-runtimes --os linux`). To check the template without deploying: `az bicep build --file infra/main.bicep`.
 
-   Optional parameters: `skuName` (default `B1`) and `nodeVersion` (default `NODE|22-lts`; list options with `az webapp list-runtimes --os linux`). To check the template without deploying: `az bicep build --file infra/main.bicep`.
+3. **Open it:** `https://<your-app-name>.azurewebsites.net`. To watch the server log: `az webapp log tail --resource-group whiteboard-rg --name <your-app-name>`.
 
-3. **Package and deploy the code.** `git archive` packages the committed files (not uncommitted changes, `node_modules`, or local boards); Azure then runs `npm install` and `npm run build`:
+To deploy updates, pull the latest commit from GitHub and rebuild (or press **Sync** in the portal under Deployment Center):
 
-   ```bash
-   git archive --format=zip --output app.zip HEAD
-   az webapp deploy --resource-group whiteboard-rg --name <your-app-name> --src-path app.zip --type zip
-   ```
+```bash
+az webapp deployment source sync --resource-group whiteboard-rg --name <your-app-name>
+```
 
-4. **Open it:** `https://<your-app-name>.azurewebsites.net`. To watch the server log: `az webapp log tail --resource-group whiteboard-rg --name <your-app-name>`.
+Notes:
 
-Repeat step 3 to deploy updates. Notes:
-
+- **Not gated by tests:** the Azure build doesn't run `npm run verify`; run it before you push (a build that fails to compile just fails the sync and leaves the previous version running).
+- **Scheduled pulls:** to pull automatically without GitHub pushing, call the sync command above from a timer on your side (for example an Azure Automation runbook or Logic App).
 - **Don't scale out** beyond one instance: each board's live state is in the server process.
 - **Idle connections** may be dropped by Azure's front end after a few minutes; the app reconnects automatically and resends any unsaved edits.
 - **Custom domain / restricting access:** configure these on the web app in the Azure portal; see the security note above before making boards public.
 - **Remove everything:** `az group delete --name whiteboard-rg`.
-
-### Deploy from GitHub (GitHub Actions)
-
-[`.github/workflows/azure-app-service.yml`](.github/workflows/azure-app-service.yml) runs on every push to `master` (or manually from the Actions tab): `npm ci`, `npm run verify` (typecheck, tests, build — a failure stops the deploy), prunes dev packages, and deploys the built package. It signs in to Azure with OpenID Connect, so no passwords or publish profiles are stored in GitHub.
-
-1. **Create the infrastructure with a deployment identity** for your repository (you need Owner or User Access Administrator on the resource group, because this creates a role assignment):
-
-   ```bash
-   az deployment group create --resource-group whiteboard-rg --template-file infra/main.bicep --parameters appName=<your-app-name> githubRepo=hemolack/mimir
-   ```
-
-   The deployment outputs `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`. Show them again with:
-
-   ```bash
-   az deployment group show --resource-group whiteboard-rg --name main --query properties.outputs
-   ```
-
-2. **Add them to GitHub** (repo → Settings → Secrets and variables → Actions): the three values as **secrets**, and a **variable** `AZURE_WEBAPP_NAME` set to your app name. With the GitHub CLI:
-
-   ```bash
-   gh secret set AZURE_CLIENT_ID --body <client-id>
-   gh secret set AZURE_TENANT_ID --body <tenant-id>
-   gh secret set AZURE_SUBSCRIPTION_ID --body <subscription-id>
-   gh variable set AZURE_WEBAPP_NAME --body <your-app-name>
-   ```
-
-3. **Push to `master`** (or run the workflow from the Actions tab). The deploy job runs in a GitHub environment named `production`, which GitHub creates on first use; the Azure identity trusts only that environment of this repository. You can add approval rules to the environment if you want deploys gated.
-
 ## Embed in another web page
 
 Use an iframe pointing at a shared board:

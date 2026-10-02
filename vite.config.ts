@@ -22,4 +22,5 @@ function boardSync(): Plugin {
 
 export default defineConfig({
   plugins: [react(), boardSync()],
+  server: { host: true },
 })
