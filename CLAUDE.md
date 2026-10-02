@@ -1,4 +1,4 @@
-# Whiteboard
+# Mimir
 
 React 19 + TypeScript + Vite whiteboard. SVG rendering, pointer events (mouse, touch, pen), state saved to localStorage.
 
