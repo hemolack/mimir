@@ -1,0 +1,85 @@
+# Build, test and deploy Mimir to Azure App Service on every push to master.
+#
+# One-time setup (see README.md, "Deploy from GitHub"):
+#   - Create the infrastructure with infra/main.bicep, passing githubRepo=<owner>/<repo>.
+#   - Repository secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#     (the template's outputs; identifiers, not passwords).
+#   - Repository variable: AZURE_WEBAPP_NAME (the appName you deployed).
+#
+# Azure sign-in uses OpenID Connect: GitHub proves it is this repo's "production"
+# environment, and Azure trusts exactly that (no stored publish credentials).
+
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys at once; let a running deploy finish.
+concurrency:
+  group: azure-app-service
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - run: npm ci
+
+      # Typecheck, unit + end-to-end sync tests, production build. A failure stops the deploy.
+      - run: npm run verify
+
+      # Ship only what the server needs at runtime (tsx and ws are runtime dependencies).
+      - run: npm prune --omit=dev
+
+      # The server runs from source (server/ imports src/) plus the built dist/.
+      # node_modules/.bin is left out: its symlinks don't survive zipping, and
+      # `npm start` doesn't need it (it runs `node --import tsx`).
+      - name: Package
+        run: >
+          zip -r -q release.zip
+          package.json package-lock.json dist server src node_modules
+          -x 'node_modules/.bin/*' 'src/**/*.test.ts' 'src/**/*.test.tsx' 'server/*.test.ts'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: release.zip
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.webapp-url }}
+    permissions:
+      id-token: write # needed to request the OpenID Connect token for Azure
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - id: deploy
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          package: release.zip
