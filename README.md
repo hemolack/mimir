@@ -113,6 +113,8 @@ Use an iframe pointing at a shared board:
   title="Whiteboard"></iframe>
 ```
 
+Inside an iframe the app switches to **embed mode** automatically: the top bar shows only the connection status (no participant avatars or Share button), and menu items that would navigate the frame to another board are hidden. Live cursors still show on the canvas. Add `?embed=0` to the URL to get the full interface in a frame, or `?embed=1` to force embed mode outside one.
+
 If you sandbox the iframe, include `allow-downloads` so exports still work. The server doesn't yet restrict which sites may frame it or connect to it; the recommended hardening (`frame-ancestors`, origin checks, input validation, access tokens) is described in [docs/design/embedding-and-security.md](docs/design/embedding-and-security.md).
 
 ## SignalR (ASP.NET Core) backend

@@ -25,6 +25,7 @@ React 19 + TypeScript + Vite whiteboard. SVG rendering, pointer events (mouse, t
 - `src/exporters.ts` — PNG/PDF/SVG export. Clones the on-screen content layer, swaps HTML (`foreignObject`) labels for wrapped SVG `<text>`, drops click-target paths; PNG rasterizes that SVG, PDF uses `jspdf` + `svg2pdf.js` (lazy-loaded) with Helvetica. Pure layout math is in `src/exportLayout.ts`.
 - `src/protocol.ts` — wire messages shared by client and server
 - Routing: `/` = private board in localStorage; `/board/<id>` = shared board
+- `src/embed.ts` — embed mode: on automatically inside an iframe, `?embed=1`/`?embed=0` to force. The top bar hides participants, Share, and frame-navigating menu items (`TopBar` `embedded` prop).
 - `src/components/Canvas.tsx` — all pointer interaction (gesture state machine), selection overlay, context menu and label editor placement
 - `src/storage.ts` — localStorage load/save and validation of untrusted board data
 

@@ -25,6 +25,7 @@ import {
   sendToBack,
   translateElements,
 } from './ops'
+import { isEmbedded } from './embed'
 import { boardIdFromPath, loadIdentity, newBoardId, saveIdentity, stashSeed, takeSeed } from './identity'
 import type { PeerPresence } from './protocol'
 import { loadBoard, loadSettings, parseBoardFile, sanitizeElements, saveBoard, saveSettings } from './storage'
@@ -57,6 +58,8 @@ const CURVE_EDIT_HINT =
 export default function App() {
   // /board/<id> is a shared, live board; anything else is the private board kept in this browser.
   const [boardId] = useState(() => boardIdFromPath(location.pathname))
+  // Read from this page's own URL each load, so it holds whatever URL the frame is pointed at.
+  const [embedded] = useState(() => isEmbedded())
   const [saved] = useState(() => (boardId ? { elements: [], viewport: { x: 0, y: 0, zoom: 1 } } : loadBoard()))
   const [settings] = useState(loadSettings)
   const sync = useRef<SyncClient | null>(null)
@@ -561,6 +564,7 @@ export default function App() {
         }}
         onSave={() => saveBoardFile(board.get())}
         onOpen={openFile}
+        embedded={embedded}
         onClear={() => {
           if (board.get().length) setDialog('clear')
         }}

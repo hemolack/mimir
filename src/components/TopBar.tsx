@@ -22,6 +22,8 @@ interface TopBarProps {
   onSave(): void
   onOpen(): void
   onClear(): void
+  /** Inside another page: hide participants, Share, and anything that navigates the frame away. */
+  embedded?: boolean
   collab: {
     shared: boolean
     status: SyncStatus
@@ -79,12 +81,20 @@ export function TopBar(p: TopBarProps) {
   // Other people, one avatar each (several tabs of the same person show separately).
   const others = collab.peers.filter((peer) => peer.clientId !== collab.me.clientId)
 
+  const statusDot = (
+    <span className={`status-dot ${collab.status}`} title={STATUS_TEXT[collab.status]} role="img" aria-label={STATUS_TEXT[collab.status]} />
+  )
+
   return (
     <div className="topbar">
+      {p.embedded ? (
+        // Embedded: just the connection status (live cursors still show on the canvas).
+        collab.shared && <div className="panel row collab embed-status">{statusDot}</div>
+      ) : (
       <div className="panel row collab">
         {collab.shared && (
           <>
-            <span className={`status-dot ${collab.status}`} title={STATUS_TEXT[collab.status]} role="img" aria-label={STATUS_TEXT[collab.status]} />
+            {statusDot}
             <button
               type="button"
               className="avatar me"
@@ -113,6 +123,7 @@ export function TopBar(p: TopBarProps) {
           <span>{collab.shared ? 'Copy link' : 'Share'}</span>
         </button>
       </div>
+      )}
       <div className="panel row">
         <button type="button" className="tool-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!p.canUndo} onClick={p.onUndo}>
           <UndoIcon />
@@ -174,8 +185,8 @@ export function TopBar(p: TopBarProps) {
             </div>
             <div className="menu-divider" role="separator" />
             {item('Zoom to fit', p.onZoomFit)}
-            {item('New shared board', collab.onNewShared)}
-            {collab.shared && item('Open my private board', collab.onOpenPrivate)}
+            {!p.embedded && item('New shared board', collab.onNewShared)}
+            {!p.embedded && collab.shared && item('Open my private board', collab.onOpenPrivate)}
             {collab.shared && item('Change my name…', collab.onRename)}
             {item('Export image or PDF…  (Ctrl+Shift+E)', p.onExport)}
             {item('Save to file…', p.onSave)}
