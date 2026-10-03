@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { IncomingMessage } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
 import { applyPatch } from '../src/patch.ts'
@@ -29,6 +29,8 @@ export interface BoardServer {
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean
   /** Save all rooms and disconnect everyone. */
   close(): Promise<void>
+  /** Handle `GET /api/boards` (JSON list of board ids); returns false for any other request. */
+  handleRequest(req: IncomingMessage, res: ServerResponse): boolean
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
@@ -161,7 +163,28 @@ export function createBoardServer(opts: { dataDir: string }): BoardServer {
     })
   }
 
+  function listBoards(): string[] {
+    const ids = new Set(rooms.keys())
+    for (const name of fs.readdirSync(opts.dataDir)) {
+      if (!name.endsWith('.json')) continue
+      const id = name.slice(0, -'.json'.length)
+      if (BOARD_ID_PATTERN.test(id)) ids.add(id)
+    }
+    return [...ids].sort()
+  }
+
   return {
+    handleRequest(req, res) {
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      if (url.pathname !== '/api/boards') return false
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405, { Allow: 'GET, HEAD' }).end()
+        return true
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+      res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ boards: listBoards() }))
+      return true
+    },
     handleUpgrade(req, socket, head) {
       const url = new URL(req.url ?? '/', 'http://localhost')
       if (url.pathname !== '/ws') return false

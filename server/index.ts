@@ -28,7 +28,10 @@ if (!fs.existsSync(path.join(DIST, 'index.html'))) {
   process.exit(1)
 }
 
+const boards = createBoardServer({ dataDir: DATA_DIR })
+
 const server = http.createServer((req, res) => {
+  if (boards.handleRequest(req, res)) return
   const url = new URL(req.url ?? '/', 'http://localhost')
   let pathname: string
   try {
@@ -50,7 +53,6 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(file).pipe(res)
 })
 
-const boards = createBoardServer({ dataDir: DATA_DIR })
 server.on('upgrade', (req, socket, head) => {
   if (!boards.handleUpgrade(req, socket, head)) socket.destroy()
 })

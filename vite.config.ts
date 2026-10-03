@@ -11,6 +11,9 @@ function boardSync(): Plugin {
     configureServer(server) {
       if (process.env.VITEST) return // tests start their own server
       const boards = createBoardServer({ dataDir: 'data/boards' })
+      server.middlewares.use((req, res, next) => {
+        if (!boards.handleRequest(req, res)) next()
+      })
       // Vite's own HMR socket only answers its own protocol, so /ws upgrades are ours.
       server.httpServer?.on('upgrade', (req, socket, head) => {
         boards.handleUpgrade(req, socket, head)
