@@ -288,6 +288,43 @@ describe('board API', () => {
     open.client.close()
   })
 
+  /** A bare socket that joins a board, like any page that opens its URL (or an old client that reconnects). */
+  const visit = async (board: string) => {
+    const ws = new WebSocket(`ws://localhost:${port}/ws?board=${board}`)
+    const types: string[] = []
+    ws.onmessage = (e) => types.push(JSON.parse(String(e.data)).type)
+    await new Promise((r) => (ws.onopen = r))
+    ws.send(JSON.stringify({ type: 'hello', clientId: `v-${Math.random()}`, name: 'Visitor', color: '#000000' }))
+    await waitFor(() => types.includes('init'), 'init')
+    return { ws, types }
+  }
+  const leave = async (ws: WebSocket) => {
+    ws.close()
+    await new Promise((r) => setTimeout(r, 150))
+  }
+
+  it('does not create or list a board that is only opened, never drawn on', async () => {
+    const v = await visit('api-just-looking')
+    expect(await list()).not.toContain('api-just-looking')
+    await leave(v.ws)
+    expect(fs.existsSync(file('api-just-looking'))).toBe(false)
+    expect(await list()).not.toContain('api-just-looking')
+  })
+
+  it('does not bring a deleted board back when something reopens its URL', async () => {
+    savedBoard('api-reopened', 0)
+    const before = await visit('api-reopened') // e.g. an old tab that ignores "deleted"
+    expect((await api('/api/boards/api-reopened', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(204)
+    await waitFor(() => before.types.includes('deleted'), 'the deleted notice')
+
+    // The old tab reconnects (or an iframe reloads) and then leaves, without drawing.
+    const again = await visit('api-reopened')
+    expect(await list()).not.toContain('api-reopened')
+    await leave(again.ws)
+    expect(fs.existsSync(file('api-reopened'))).toBe(false)
+    expect(await list()).not.toContain('api-reopened')
+  })
+
   it('refuses a bulk delete without olderThanDays', async () => {
     expect((await api('/api/boards', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(400)
     expect((await api('/api/boards?olderThanDays=abc', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(400)

@@ -103,6 +103,11 @@ export function createBoardServer(opts: BoardServerOptions): BoardServer {
     room.saveTimer = null
     if (room.deleted) return
     const file = fileFor(room.id)
+    // Opening a board's URL shouldn't create it: only persist boards that have
+    // content, or that were saved before (e.g. one someone cleared on purpose).
+    // Otherwise any visit (an old tab reconnecting, an iframe, a link preview)
+    // would bring back a deleted board or litter the disk with empty ones.
+    if (room.elements.length === 0 && !fs.existsSync(file)) return
     // Write-then-rename so a crash never leaves a half-written board.
     fs.writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, elements: room.elements }))
     fs.renameSync(`${file}.tmp`, file)
@@ -195,7 +200,9 @@ export function createBoardServer(opts: BoardServerOptions): BoardServer {
   }
 
   function listBoards(): string[] {
-    const ids = new Set(rooms.keys())
+    // Saved boards, plus open ones that have content but haven't been saved yet.
+    // (An empty board someone merely has open isn't a board yet.)
+    const ids = new Set([...rooms.values()].filter((r) => r.elements.length > 0).map((r) => r.id))
     for (const name of fs.readdirSync(opts.dataDir)) {
       if (!name.endsWith('.json')) continue
       const id = name.slice(0, -'.json'.length)

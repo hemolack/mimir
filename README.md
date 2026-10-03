@@ -67,7 +67,7 @@ Notes for any host (VM, PaaS, container):
 
 | Request | Auth | Result |
 |---|---|---|
-| `GET /api/boards` | none | `{"boards": ["id", …]}` — every saved or open board |
+| `GET /api/boards` | none | `{"boards": ["id", …]}` — every board with saved content. Just opening a board's URL doesn't create one; a board exists once something is drawn on it |
 | `DELETE /api/boards/<id>` | admin token | `204` deleted · `404` no such board |
 | `DELETE /api/boards?olderThanDays=N` | admin token | Deletes boards not modified in the last N days; boards someone has open are skipped. Returns `{"deleted": […], "skippedOpen": […]}` |
 
