@@ -10,7 +10,7 @@ function boardSync(): Plugin {
     name: 'board-sync',
     configureServer(server) {
       if (process.env.VITEST) return // tests start their own server
-      const boards = createBoardServer({ dataDir: 'data/boards' })
+      const boards = createBoardServer({ dataDir: 'data/boards', adminToken: process.env.ADMIN_TOKEN })
       server.middlewares.use((req, res, next) => {
         if (!boards.handleRequest(req, res)) next()
       })

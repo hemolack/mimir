@@ -17,11 +17,14 @@ let server: http.Server
 let boards: BoardServer
 let dataDir: string
 let port: number
+const ADMIN_TOKEN = 'test-admin-token'
 
 beforeAll(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whiteboard-test-'))
-  boards = createBoardServer({ dataDir })
-  server = http.createServer()
+  boards = createBoardServer({ dataDir, adminToken: ADMIN_TOKEN })
+  server = http.createServer((req, res) => {
+    if (!boards.handleRequest(req, res)) res.writeHead(404).end()
+  })
   server.on('upgrade', (req, socket, head) => {
     if (!boards.handleUpgrade(req, socket, head)) socket.destroy()
   })
@@ -63,15 +66,19 @@ async function waitFor(check: () => boolean, what: string, timeout = 3000) {
 
 /** A client plus the element list a UI would show, kept like the app keeps it. */
 function connect(board: string, name: string) {
-  const state = { elements: [] as BoardElement[], peers: [] as PeerPresence[], online: false, inits: 0 }
+  const state = { elements: [] as BoardElement[], peers: [] as PeerPresence[], online: false, inits: 0, status: '', deleted: false }
   const client = new SyncClient(board, { clientId: `${name}-${Math.random()}`, name, color: '#1971c2' }, {
     onState(els) {
       state.elements = els
       state.inits++
     },
-    onStatus: (s) => (state.online = s === 'online'),
+    onStatus: (s) => {
+      state.status = s
+      state.online = s === 'online'
+    },
     onPeers: (p) => (state.peers = p),
     onError: () => {},
+    onDeleted: () => (state.deleted = true),
   })
   /** Make a local edit the way the board store does: apply, then hand the diff to sync. */
   const edit = (fn: (els: BoardElement[]) => BoardElement[]) => {
@@ -202,5 +209,105 @@ describe('real-time sync', () => {
     const confirmed = [shape('a')]
     const pending = diffElements(confirmed, [shape('a', 5), shape('b')])
     expect(applyPatch(confirmed, pending).map((e) => e.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('board API', () => {
+  const api = (pathname: string, init: RequestInit & { token?: string } = {}) => {
+    const { token, ...rest } = init
+    return fetch(`http://localhost:${port}${pathname}`, {
+      ...rest,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+  }
+  const list = async () => ((await (await api('/api/boards')).json()) as { boards: string[] }).boards
+  const file = (id: string) => path.join(dataDir, `${id}.json`)
+  /** A saved board on disk, last modified `daysAgo` days ago. */
+  const savedBoard = (id: string, daysAgo: number) => {
+    fs.writeFileSync(file(id), JSON.stringify({ version: 1, elements: [shape('x')] }))
+    const t = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000)
+    fs.utimesSync(file(id), t, t)
+  }
+
+  it('requires the admin token to delete', async () => {
+    savedBoard('api-guarded', 0)
+    expect((await api('/api/boards/api-guarded', { method: 'DELETE' })).status).toBe(401)
+    expect((await api('/api/boards/api-guarded', { method: 'DELETE', token: 'wrong' })).status).toBe(401)
+    expect((await api('/api/boards?olderThanDays=0', { method: 'DELETE' })).status).toBe(401)
+    expect(fs.existsSync(file('api-guarded'))).toBe(true)
+  })
+
+  it('deletes a saved board', async () => {
+    savedBoard('api-saved', 0)
+    expect(await list()).toContain('api-saved')
+    expect((await api('/api/boards/api-saved', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(204)
+    expect(fs.existsSync(file('api-saved'))).toBe(false)
+    expect(await list()).not.toContain('api-saved')
+  })
+
+  it('rejects unknown and invalid ids', async () => {
+    expect((await api('/api/boards/no-such-board', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(404)
+    expect((await api('/api/boards/..%2Fetc', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(400)
+    expect((await api('/api/boards/x', { method: 'GET' })).status).toBe(405)
+  })
+
+  it('deletes an open board: clients are told, stop syncing, and do not recreate it', async () => {
+    const a = connect('api-open', 'Ann')
+    await waitFor(() => a.state.online, 'online')
+    a.edit((els) => [...els, shape('doomed', 1)])
+    await new Promise((r) => setTimeout(r, 100))
+
+    expect((await api('/api/boards/api-open', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(204)
+    await waitFor(() => a.state.deleted, 'the client to hear about the deletion')
+    expect(a.state.status).toBe('deleted')
+
+    // Edits after deletion go nowhere, and the client doesn't reconnect.
+    a.edit((els) => [...els, shape('after', 2)])
+    await new Promise((r) => setTimeout(r, 1500))
+    expect(fs.existsSync(file('api-open'))).toBe(false)
+    expect(await list()).not.toContain('api-open')
+    a.client.close()
+  })
+
+  it('deletes boards older than N days, skipping ones that are open', async () => {
+    savedBoard('api-old-1', 40)
+    savedBoard('api-old-2', 31)
+    savedBoard('api-recent', 5)
+    savedBoard('api-old-but-open', 60)
+    const open = connect('api-old-but-open', 'Olga')
+    await waitFor(() => open.state.online, 'online')
+
+    const res = await api('/api/boards?olderThanDays=30', { method: 'DELETE', token: ADMIN_TOKEN })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { deleted: string[]; skippedOpen: string[] }
+    expect(body.deleted).toEqual(expect.arrayContaining(['api-old-1', 'api-old-2']))
+    expect(body.deleted).not.toContain('api-recent')
+    expect(body.skippedOpen).toContain('api-old-but-open')
+    expect(fs.existsSync(file('api-recent'))).toBe(true)
+    expect(fs.existsSync(file('api-old-1'))).toBe(false)
+    open.client.close()
+  })
+
+  it('refuses a bulk delete without olderThanDays', async () => {
+    expect((await api('/api/boards', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(400)
+    expect((await api('/api/boards?olderThanDays=abc', { method: 'DELETE', token: ADMIN_TOKEN })).status).toBe(400)
+  })
+
+  it('disables deletion when no admin token is configured', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whiteboard-noadmin-'))
+    const noAdmin = createBoardServer({ dataDir: dir })
+    const s = http.createServer((req, res) => {
+      if (!noAdmin.handleRequest(req, res)) res.writeHead(404).end()
+    })
+    await new Promise<void>((resolve) => s.listen(0, resolve))
+    const p = (s.address() as AddressInfo).port
+    const res = await fetch(`http://localhost:${p}/api/boards/anything`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' },
+    })
+    expect(res.status).toBe(403)
+    await noAdmin.close()
+    await new Promise((resolve) => s.close(resolve))
+    fs.rmSync(dir, { recursive: true, force: true })
   })
 })

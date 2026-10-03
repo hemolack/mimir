@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -22,6 +23,8 @@ interface Room {
   /** Sockets that have said hello, with their presence. */
   peers: Map<WebSocket, PeerPresence>
   saveTimer: NodeJS.Timeout | null
+  /** Set when an administrator deletes the board: never save it again. */
+  deleted: boolean
 }
 
 export interface BoardServer {
@@ -29,8 +32,34 @@ export interface BoardServer {
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean
   /** Save all rooms and disconnect everyone. */
   close(): Promise<void>
-  /** Handle `GET /api/boards` (JSON list of board ids); returns false for any other request. */
+  /**
+   * Handle the board API; returns false for any other request.
+   * - `GET /api/boards` — JSON list of board ids
+   * - `DELETE /api/boards/<id>` — delete one board (admin token required)
+   * - `DELETE /api/boards?olderThanDays=N` — delete boards not modified for N days
+   *   and not currently open (admin token required)
+   */
   handleRequest(req: IncomingMessage, res: ServerResponse): boolean
+}
+
+export interface BoardServerOptions {
+  dataDir: string
+  /** Bearer token required for deleting boards. Unset or empty disables deletion. */
+  adminToken?: string
+}
+
+const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest()
+
+/** Constant-time check of an `Authorization: Bearer <token>` header. */
+function hasToken(req: IncomingMessage, token: string): boolean {
+  const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '')
+  // Hashing first gives equal-length buffers, as timingSafeEqual requires.
+  return !!m && crypto.timingSafeEqual(sha256(m[1].trim()), sha256(token))
+}
+
+const json = (res: ServerResponse, status: number, body: unknown) => {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+  res.end(JSON.stringify(body))
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
@@ -51,7 +80,7 @@ function sanitizePatch(raw: unknown): Patch | null {
  * acknowledgement), so all clients converge on the server's state. Rooms are
  * persisted as JSON files under `dataDir` and unloaded when the last member leaves.
  */
-export function createBoardServer(opts: { dataDir: string }): BoardServer {
+export function createBoardServer(opts: BoardServerOptions): BoardServer {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES })
   const rooms = new Map<string, Room>()
   fs.mkdirSync(opts.dataDir, { recursive: true })
@@ -66,12 +95,13 @@ export function createBoardServer(opts: { dataDir: string }): BoardServer {
     } catch {
       // New board (or unreadable file): start empty.
     }
-    return { id, elements, sockets: new Set(), peers: new Map(), saveTimer: null }
+    return { id, elements, sockets: new Set(), peers: new Map(), saveTimer: null, deleted: false }
   }
 
   function save(room: Room) {
     if (room.saveTimer) clearTimeout(room.saveTimer)
     room.saveTimer = null
+    if (room.deleted) return
     const file = fileFor(room.id)
     // Write-then-rename so a crash never leaves a half-written board.
     fs.writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, elements: room.elements }))
@@ -158,7 +188,8 @@ export function createBoardServer(opts: { dataDir: string }): BoardServer {
       if (id && ![...r.peers.values()].some((p) => p.clientId === id)) broadcast(r, { type: 'leave', clientId: id })
       if (r.sockets.size === 0) {
         save(r)
-        rooms.delete(r.id)
+        // Only unload this room: after a delete, the same id may already be a new room.
+        if (rooms.get(r.id) === r) rooms.delete(r.id)
       }
     })
   }
@@ -173,17 +204,119 @@ export function createBoardServer(opts: { dataDir: string }): BoardServer {
     return [...ids].sort()
   }
 
+  /**
+   * Delete a board: tell anyone connected (their clients stop reconnecting, so
+   * they don't recreate it), drop it from memory without saving, remove its file.
+   * Returns false if there was no such board.
+   */
+  function deleteBoard(id: string): boolean {
+    let existed = false
+    const room = rooms.get(id)
+    if (room) {
+      existed = true
+      room.deleted = true
+      if (room.saveTimer) clearTimeout(room.saveTimer)
+      room.saveTimer = null
+      rooms.delete(id)
+      for (const ws of room.sockets) {
+        send(ws, { type: 'deleted' })
+        ws.close(1000, 'Board deleted')
+      }
+    }
+    for (const file of [fileFor(id), `${fileFor(id)}.tmp`]) {
+      try {
+        fs.unlinkSync(file)
+        existed = true
+      } catch {
+        // Not on disk (never saved, or already gone).
+      }
+    }
+    return existed
+  }
+
+  /** Delete saved boards not modified within `days` days, except boards that are open right now. */
+  function deleteOlderThan(days: number): { deleted: string[]; skippedOpen: string[] } {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+    const deleted: string[] = []
+    const skippedOpen: string[] = []
+    for (const name of fs.readdirSync(opts.dataDir)) {
+      if (!name.endsWith('.json')) continue
+      const id = name.slice(0, -'.json'.length)
+      if (!BOARD_ID_PATTERN.test(id)) continue
+      let mtime: number
+      try {
+        mtime = fs.statSync(fileFor(id)).mtimeMs
+      } catch {
+        continue
+      }
+      if (mtime >= cutoff) continue
+      if (rooms.has(id)) skippedOpen.push(id)
+      else if (deleteBoard(id)) deleted.push(id)
+    }
+    return { deleted: deleted.sort(), skippedOpen: skippedOpen.sort() }
+  }
+
+  /** Checks the admin token; on failure writes the error response and returns false. */
+  function requireAdmin(req: IncomingMessage, res: ServerResponse): boolean {
+    if (!opts.adminToken) {
+      json(res, 403, { error: 'Deleting boards is disabled. Set ADMIN_TOKEN on the server to enable it.' })
+      return false
+    }
+    if (!hasToken(req, opts.adminToken)) {
+      res.setHeader('WWW-Authenticate', 'Bearer')
+      json(res, 401, { error: 'Missing or invalid admin token.' })
+      return false
+    }
+    return true
+  }
+
   return {
     handleRequest(req, res) {
       const url = new URL(req.url ?? '/', 'http://localhost')
-      if (url.pathname !== '/api/boards') return false
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        res.writeHead(405, { Allow: 'GET, HEAD' }).end()
+
+      if (url.pathname === '/api/boards') {
+        if (req.method === 'GET' || req.method === 'HEAD') {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+          res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ boards: listBoards() }))
+        } else if (req.method === 'DELETE') {
+          if (!requireAdmin(req, res)) return true
+          // Required, so a bare DELETE can never wipe everything by accident.
+          const raw = url.searchParams.get('olderThanDays')
+          const days = raw === null ? NaN : Number(raw)
+          if (!Number.isFinite(days) || days < 0) {
+            json(res, 400, { error: 'Give olderThanDays, a number of days (0 or more).' })
+            return true
+          }
+          json(res, 200, deleteOlderThan(days))
+        } else {
+          res.writeHead(405, { Allow: 'GET, HEAD, DELETE' }).end()
+        }
         return true
       }
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ boards: listBoards() }))
-      return true
+
+      const one = /^\/api\/boards\/([^/]+)$/.exec(url.pathname)
+      if (one) {
+        if (req.method !== 'DELETE') {
+          res.writeHead(405, { Allow: 'DELETE' }).end()
+          return true
+        }
+        let id: string
+        try {
+          id = decodeURIComponent(one[1])
+        } catch {
+          id = ''
+        }
+        if (!BOARD_ID_PATTERN.test(id)) {
+          json(res, 400, { error: 'Invalid board id.' })
+          return true
+        }
+        if (!requireAdmin(req, res)) return true
+        if (deleteBoard(id)) res.writeHead(204).end()
+        else json(res, 404, { error: 'No such board.' })
+        return true
+      }
+
+      return false
     },
     handleUpgrade(req, socket, head) {
       const url = new URL(req.url ?? '/', 'http://localhost')

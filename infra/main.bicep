@@ -40,6 +40,10 @@ param repoUrl string = 'https://github.com/hemolack/mimir.git'
 @description('Branch to deploy.')
 param branch string = 'master'
 
+@description('Admin token for the board-deletion API (DELETE /api/boards...). Leave empty to disable deleting. Use a long random value.')
+@secure()
+param adminToken string = ''
+
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${appName}-plan'
   location: location
@@ -87,6 +91,11 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE'
           value: 'true'
+        }
+        {
+          // Empty disables the board-deletion API.
+          name: 'ADMIN_TOKEN'
+          value: adminToken
         }
       ]
     }

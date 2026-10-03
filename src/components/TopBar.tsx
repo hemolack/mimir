@@ -48,6 +48,7 @@ const STATUS_TEXT: Record<SyncStatus, string> = {
   connecting: 'Connecting…',
   online: 'Live — changes sync in real time',
   offline: 'Offline — reconnecting; your edits will sync when it’s back',
+  deleted: 'This board was deleted',
 }
 
 export function TopBar(p: TopBarProps) {

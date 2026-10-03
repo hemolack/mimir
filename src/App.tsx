@@ -89,7 +89,7 @@ export default function App() {
   const [spaceHeld, setSpaceHeld] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   /** Which in-app dialog is open (the browser's prompt/confirm aren't reliable everywhere). */
-  const [dialog, setDialog] = useState<'rename' | 'link' | 'clear' | null>(null)
+  const [dialog, setDialog] = useState<'rename' | 'link' | 'clear' | 'deleted' | null>(null)
   const clipboard = useRef<BoardElement[]>([])
   const svgRef = useRef<SVGSVGElement>(null)
 
@@ -146,6 +146,11 @@ export default function App() {
       onStatus: setStatus,
       onPeers: setPeers,
       onError: showToast,
+      onDeleted() {
+        board.applyRemote([])
+        setSelectedIds([])
+        setDialog('deleted')
+      },
     })
     sync.current = client
     return () => {
@@ -601,6 +606,15 @@ export default function App() {
           readOnly
           note="Copy the link (Ctrl+C) and send it. Anyone with it can view and edit this board."
           onSubmit={() => setDialog(null)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === 'deleted' && (
+        <ConfirmDialog
+          title="Board deleted"
+          message="An administrator deleted this board, so it no longer exists and changes here won't be saved."
+          confirmLabel={embedded ? 'OK' : 'Open my private board'}
+          onConfirm={() => (embedded ? setDialog(null) : location.assign('/'))}
           onClose={() => setDialog(null)}
         />
       )}

@@ -517,6 +517,10 @@ button {
   background: var(--danger);
 }
 
+.status-dot.deleted {
+  background: var(--muted);
+}
+
 .avatar {
   display: inline-flex;
   align-items: center;

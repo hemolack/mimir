@@ -39,6 +39,7 @@ npm start
 |---|---|---|
 | `PORT` | `8787` | Port to listen on |
 | `DATA_DIR` | `data/boards` | Where shared boards are stored (JSON files) |
+| `ADMIN_TOKEN` | *(unset)* | Enables deleting boards through the API (see [Board API](#board-api)). Unset = deleting disabled. Use a long random value. |
 
 Notes for any host (VM, PaaS, container):
 
@@ -62,6 +63,28 @@ Notes for any host (VM, PaaS, container):
 
 > ⚠️ Anyone who knows a board's URL can view and edit it, and the server has no rate limiting yet. Read [docs/design/embedding-and-security.md](docs/design/embedding-and-security.md) before exposing it on the public internet.
 
+## Board API
+
+| Request | Auth | Result |
+|---|---|---|
+| `GET /api/boards` | none | `{"boards": ["id", …]}` — every saved or open board |
+| `DELETE /api/boards/<id>` | admin token | `204` deleted · `404` no such board |
+| `DELETE /api/boards?olderThanDays=N` | admin token | Deletes boards not modified in the last N days; boards someone has open are skipped. Returns `{"deleted": […], "skippedOpen": […]}` |
+
+Deleting requires `Authorization: Bearer <ADMIN_TOKEN>`; without `ADMIN_TOKEN` configured on the server, deletes return `403`. People who have a deleted board open are told it was deleted and their app stops syncing, so it isn't recreated. Deletion is permanent — there's no undo or trash.
+
+```bash
+# Delete one board
+curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" https://<host>/api/boards/team-retro
+
+# Delete boards untouched for 90 days
+curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" "https://<host>/api/boards?olderThanDays=90"
+```
+
+On Windows PowerShell, use `curl.exe` (not the `curl` alias) or `Invoke-RestMethod -Method Delete -Headers @{ Authorization = "Bearer $env:ADMIN_TOKEN" } -Uri ...`.
+
+For local development, set `ADMIN_TOKEN` in the environment before `npm run dev`.
+
 ## Deploy to Azure (App Service)
 
 [`infra/main.bicep`](infra/main.bicep) creates a Linux App Service plan and web app configured for this server: Node runtime, `npm start`, WebSockets on, Always On, HTTPS only, one instance, and boards stored in `/home/data/boards` (App Service's persistent storage, kept across restarts and redeploys).
@@ -83,7 +106,9 @@ You need the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli
    az deployment group create --resource-group whiteboard-rg --template-file infra/main.bicep --parameters appName=<your-app-name>
    ```
 
-   Optional parameters: `repoUrl` (default `https://github.com/hemolack/mimir.git`; use your fork's URL if you have one, it must be public), `branch` (default `master`), `skuName` (default `B1`) and `nodeVersion` (default `NODE|22-lts`; list options with `az webapp list-runtimes --os linux`). To check the template without deploying: `az bicep build --file infra/main.bicep`.
+   To enable deleting boards through the [Board API](#board-api), also pass `adminToken=<long-random-value>` (it's a secure parameter, so it isn't shown in deployment logs; you can also set the `ADMIN_TOKEN` application setting in the portal later).
+
+   Other optional parameters: `repoUrl` (default `https://github.com/hemolack/mimir.git`; use your fork's URL if you have one, it must be public), `branch` (default `master`), `skuName` (default `B1`) and `nodeVersion` (default `NODE|22-lts`; list options with `az webapp list-runtimes --os linux`). To check the template without deploying: `az bicep build --file infra/main.bicep`.
 
 3. **Open it:** `https://<your-app-name>.azurewebsites.net`. To watch the server log: `az webapp log tail --resource-group whiteboard-rg --name <your-app-name>`.
 

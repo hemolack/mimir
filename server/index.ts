@@ -1,7 +1,8 @@
 /**
  * Production server: serves the built app from dist/ and hosts the board
  * WebSocket on the same port. Build first (`npm run build`), then `npm start`.
- * Environment: PORT (default 8787), DATA_DIR (default ./data/boards).
+ * Environment: PORT (default 8787), DATA_DIR (default ./data/boards),
+ * ADMIN_TOKEN (enables deleting boards via the API; unset = disabled).
  */
 import fs from 'node:fs'
 import http from 'node:http'
@@ -28,7 +29,8 @@ if (!fs.existsSync(path.join(DIST, 'index.html'))) {
   process.exit(1)
 }
 
-const boards = createBoardServer({ dataDir: DATA_DIR })
+// ADMIN_TOKEN enables the board-deletion API; without it, deleting is disabled.
+const boards = createBoardServer({ dataDir: DATA_DIR, adminToken: process.env.ADMIN_TOKEN })
 
 const server = http.createServer((req, res) => {
   if (boards.handleRequest(req, res)) return

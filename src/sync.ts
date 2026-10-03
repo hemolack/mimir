@@ -3,7 +3,7 @@ import type { Patch } from './patch'
 import type { ClientMessage, PeerInfo, PeerPresence, ServerMessage } from './protocol'
 import type { BoardElement, Point } from './types'
 
-export type SyncStatus = 'connecting' | 'online' | 'offline'
+export type SyncStatus = 'connecting' | 'online' | 'offline' | 'deleted'
 
 interface PendingOp {
   opId: number
@@ -17,6 +17,8 @@ export interface SyncHandlers {
   onStatus(status: SyncStatus): void
   onPeers(peers: PeerPresence[]): void
   onError(message: string): void
+  /** An administrator deleted the board. The client has stopped syncing for good. */
+  onDeleted?(): void
 }
 
 const FLUSH_MS = 30
@@ -146,6 +148,18 @@ export class SyncClient {
         break
       case 'error':
         this.handlers.onError(msg.message)
+        break
+      case 'deleted':
+        // Stop for good: reconnecting (or resending pending edits) would recreate the board.
+        this.closed = true
+        this.pending = []
+        for (const t of [this.flushTimer, this.presenceTimer, this.reconnectTimer]) if (t) clearTimeout(t)
+        this.flushTimer = this.presenceTimer = this.reconnectTimer = null
+        this.ws?.close()
+        this.peers.clear()
+        this.handlers.onPeers([])
+        this.handlers.onStatus('deleted')
+        this.handlers.onDeleted?.()
         break
     }
   }

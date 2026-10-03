@@ -28,3 +28,5 @@ export type ServerMessage =
   | { type: 'presence'; peer: PeerPresence }
   | { type: 'leave'; clientId: string }
   | { type: 'error'; message: string }
+  /** The board was deleted by an administrator; the connection closes and must not reconnect. */
+  | { type: 'deleted' }
