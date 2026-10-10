@@ -1,0 +1,1047 @@
+/* Theme tokens. App sets data-theme="light|dark" on <html>; the board's own
+   colors are mapped in JS (src/theme.ts) and must stay in step with --bg. */
+:root {
+  --bg: #f8f9fa; /* = CANVAS.light */
+  --panel: #ffffff;
+  --border: #e3e6ea;
+  --text: #1e1e1e;
+  --muted: #6b7280;
+  --accent: #4f46e5;
+  --accent-soft: #e8e7fd;
+  --accent-wash: rgb(79 70 229 / 0.08);
+  --on-accent: #ffffff;
+  --danger: #d9363e;
+  --danger-soft: #fdecec;
+  --grid: #d3d7dc;
+  --hover: #f1f3f5;
+  --surface-2: #f1f3f5;
+  --editor-bg: rgb(255 255 255 / 0.9);
+  --backdrop: rgb(0 0 0 / 0.25);
+  --tooltip-bg: #1e1e1e;
+  --tooltip-text: #ffffff;
+  --highlight-bg: #fff3bf;
+  --highlight-text: #8a6d00;
+  --swatch-border: rgb(0 0 0 / 0.15);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 16px rgb(0 0 0 / 0.08);
+  color-scheme: light;
+  font-family: ui-rounded, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--text);
+}
+
+:root[data-theme='dark'] {
+  --bg: #1f2023; /* = CANVAS.dark */
+  --panel: #2a2b2f;
+  --border: #3b3d42;
+  --text: #e6e6e6;
+  --muted: #a0a6ae;
+  --accent: #8f89ff;
+  --accent-soft: #38355f;
+  --accent-wash: rgb(143 137 255 / 0.12);
+  --on-accent: #17162e;
+  --danger: #ff7a7a;
+  --danger-soft: #4a2628;
+  --grid: #3a3d42;
+  --hover: #35373c;
+  --surface-2: #232428;
+  --editor-bg: rgb(42 43 47 / 0.92);
+  --backdrop: rgb(0 0 0 / 0.55);
+  --tooltip-bg: #e6e6e6;
+  --tooltip-text: #1e1e1e;
+  --highlight-bg: #5c4b00;
+  --highlight-text: #ffe066;
+  --swatch-border: rgb(255 255 255 / 0.2);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.45);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  overscroll-behavior: none;
+}
+
+.app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* ---------- Canvas ---------- */
+
+.canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+.board {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  background: var(--bg);
+}
+
+.grid-dot {
+  fill: var(--grid);
+}
+
+.selection-box {
+  fill: none;
+  stroke: var(--accent);
+}
+
+.handle {
+  fill: var(--panel);
+  stroke: var(--accent);
+}
+
+.handle.control {
+  fill: var(--accent);
+  stroke: var(--panel);
+}
+
+.handle.anchor.active {
+  fill: var(--accent);
+}
+
+.handle-arm {
+  stroke: var(--accent);
+  opacity: 0.7;
+}
+
+.pivot {
+  fill: var(--panel);
+  stroke: var(--accent);
+}
+
+.pivot-cross {
+  stroke: var(--accent);
+}
+
+.transform-hud {
+  position: absolute;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.marquee {
+  fill: var(--accent-wash);
+  stroke: var(--accent);
+}
+
+.bind-target {
+  fill: var(--accent-wash);
+  stroke: var(--accent);
+}
+
+/* ---------- Panels & buttons ---------- */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tool-btn.small {
+  width: 34px;
+  height: 34px;
+}
+
+.tool-btn.text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tool-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.tool-btn.active,
+.tool-btn.active:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tool-btn.danger:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.tool-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tool-btn:focus-visible,
+.swatch:focus-visible,
+.menu-item:focus-visible,
+.zoom-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 28px);
+  gap: 6px;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--swatch-border);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.swatch.active {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent);
+}
+
+.swatch.none,
+.color-chip.none {
+  background: linear-gradient(135deg, transparent 45%, var(--danger) 45%, var(--danger) 55%, transparent 55%), var(--panel);
+}
+
+.color-chip {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid;
+}
+
+.color-chip.filled {
+  border: 1px solid var(--swatch-border);
+}
+
+.dot {
+  display: block;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.bar {
+  display: block;
+  width: 20px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+/* ---------- Palette ---------- */
+
+.palette-wrap {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-height: calc(100% - 24px);
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.palette-group {
+  display: grid;
+  grid-template-columns: repeat(2, 40px);
+  gap: 2px;
+}
+
+.palette-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.line-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.palette-caption {
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.line-options.editing .palette-caption {
+  color: var(--accent);
+}
+
+/* Choices for one line option; sits beside the palette, level with the options. */
+.line-flyout {
+  align-self: flex-end;
+  padding: 10px;
+  width: 260px;
+}
+
+.flyout-title {
+  margin: 0 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.flyout-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+
+.flyout-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* Color dot and text-size glyph used in option buttons and flyouts. */
+.choice-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--swatch-border);
+}
+
+.choice-swatch.none {
+  background: linear-gradient(135deg, transparent 45%, var(--danger) 45%, var(--danger) 55%, transparent 55%), var(--panel);
+}
+
+.text-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.flyout-option:hover {
+  background: var(--hover);
+}
+
+.flyout-option.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.flyout-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Brush / curve options in the palette's tool-options area (same width as two tool buttons). */
+.brush-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mini-swatches,
+.mini-sizes {
+  display: grid;
+  grid-template-columns: repeat(4, 20px);
+  gap: 2px;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.mini-swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--swatch-border);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mini-swatch.active {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--accent);
+}
+
+.mini-size {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mini-size:hover {
+  background: var(--hover);
+}
+
+.mini-size.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.highlighter-toggle {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.highlighter-toggle.active {
+  border-color: transparent;
+  background: var(--highlight-bg);
+  color: var(--highlight-text);
+  font-weight: 600;
+}
+
+.mini-swatch:focus-visible,
+.mini-size:focus-visible,
+.highlighter-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Top bar ---------- */
+
+.topbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.topbar .panel {
+  padding: 4px;
+}
+
+/* ---------- Collaboration ---------- */
+
+.collab {
+  gap: 4px;
+  padding-left: 8px !important;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 2px;
+  background: #adb5bd;
+}
+
+.status-dot.online {
+  background: #2f9e44;
+  box-shadow: 0 0 0 3px rgb(47 158 68 / 0.18);
+}
+
+.status-dot.connecting {
+  background: #f08c00;
+}
+
+.status-dot.offline {
+  background: var(--danger);
+}
+
+.status-dot.deleted {
+  background: var(--muted);
+}
+
+/* Shown instead of the status dot while the server wants an access key. */
+.btn.locked-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: -6px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08);
+}
+
+.avatar.me {
+  margin-left: 0;
+  cursor: pointer;
+}
+
+.avatar.more {
+  background: #868e96;
+}
+
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  margin-left: 4px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.share-btn:hover {
+  filter: brightness(1.08);
+}
+
+.share-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.peer-cursor {
+  transition: transform 80ms linear;
+}
+
+.peer-name {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: #fff;
+  font: 600 12px/1.3 ui-rounded, 'Segoe UI', system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.zoom-label {
+  min-width: 52px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.zoom-label:hover {
+  background: var(--hover);
+}
+
+.menu-anchor {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 250px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 4px 4px 10px;
+}
+
+.menu-row-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.menu-row .segmented {
+  flex-wrap: nowrap;
+}
+
+.menu-row .segmented button {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.menu-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
+.menu-item {
+  text-align: left;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: var(--hover);
+}
+
+.menu-item.danger {
+  color: var(--danger);
+}
+
+/* ---------- Context menu ---------- */
+
+.context-menu {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  padding: 4px;
+  z-index: 5;
+  max-width: calc(100% - 16px);
+}
+
+.context-menu > .row {
+  flex-wrap: wrap;
+}
+
+.menu-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.popover {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding: 8px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.popover .swatches {
+  grid-template-columns: repeat(auto-fill, 28px);
+  max-width: 300px;
+}
+
+.popover-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.popover-label {
+  width: 44px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------- Label editor ---------- */
+
+.label-editor {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.label-editor textarea {
+  pointer-events: auto;
+  width: 100%;
+  min-width: 60px;
+  resize: none;
+  overflow: hidden;
+  padding: 4px;
+  border: 1.5px solid var(--accent);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  text-align: center;
+  line-height: 1.25;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ---------- Dialog ---------- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--backdrop);
+  z-index: 30;
+}
+
+.dialog {
+  width: min(420px, 100%);
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dialog h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.field-label {
+  width: 84px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field-note {
+  margin: -6px 0 0 96px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--hover);
+}
+
+.segmented button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.segmented button.active {
+  background: var(--panel);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
+}
+
+.segmented button:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialog-field .field-label {
+  width: auto;
+}
+
+.dialog-input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.dialog-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.dialog-message,
+.dialog-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.dialog-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.btn.primary.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-accent);
+}
+
+.dialog-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (max-width: 480px) {
+  .field {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .field-note {
+    margin-left: 0;
+  }
+}
+
+/* ---------- Hint & toast ---------- */
+
+.hint {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.toast {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
+  font-size: 14px;
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+/* ---------- Small screens: palette becomes a bottom bar ---------- */
+
+@media (max-width: 720px) {
+  .palette-wrap {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 8px;
+    transform: none;
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .palette {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-height: none;
+  }
+
+  .palette-group {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  .palette-sep {
+    width: 1px;
+    height: auto;
+    margin: 4px 6px;
+  }
+
+  .line-options {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .palette-caption {
+    display: none;
+  }
+
+  .line-flyout {
+    width: auto;
+    align-self: stretch;
+  }
+
+  .flyout-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+
+  /* Bottom-bar layout: tool options run in a row after the shapes. */
+  .brush-options {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .mini-swatches {
+    grid-template-columns: repeat(8, 22px);
+  }
+
+  .mini-swatch {
+    width: 22px;
+    height: 22px;
+  }
+
+  .mini-sizes {
+    grid-template-columns: repeat(4, 24px);
+  }
+
+  .mini-size {
+    width: 24px;
+    height: 24px;
+  }
+
+  .topbar {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    justify-content: flex-end;
+  }
+
+  .hint {
+    display: none;
+  }
+
+  .share-btn span {
+    display: none;
+  }
+
+  .share-btn {
+    padding: 0 9px;
+  }
+
+  .toast {
+    bottom: 80px;
+  }
+}
